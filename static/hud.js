@@ -192,7 +192,11 @@ function handle(res, voice = true) {
   (res.log || []).forEach((l) => line("› " + l, "log"));
   if (res.confirm) {
     const c = res.confirm;
-    $("cbody").textContent = `${c.tool}\n\n${c.args.command || c.args.path || ""}${c.args.content ? "\n\n" + c.args.content.slice(0, 1500) : ""}`;
+    const a = c.args || {};
+    $("cbody").textContent = c.tool === "create_skill"
+      ? `NOUVELLE COMPÉTENCE : ${a.name}\n${a.description || ""}\n\n${(a.code || "").slice(0, 4000)}`
+      : `${c.tool}\n\n` + (a.command || a.path || a.to || a.event_id || a.name || "") +
+        (a.subject ? "\nObjet : " + a.subject : "") + (a.content || a.body ? "\n\n" + (a.content || a.body).slice(0, 1500) : "");
     $("confirm").hidden = false;
     $("c-yes").onclick = () => decide(c.id, true);
     $("c-no").onclick = () => decide(c.id, false);
@@ -388,6 +392,7 @@ async function pollEvents() {
       if (e.type === "state") setState(e.state === "idle" ? "" : e.state);
       if (e.type === "user") line(e.text, "user");
       if (e.type === "reply" || e.type === "confirm") handle(e.res, false);
+      if (e.type === "idea") line("💡 Idée de nouvelle compétence : " + e.text + " — dites « crée cette compétence » pour que je l'apprenne.", "log");
     }
   } catch {}
 }

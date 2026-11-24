@@ -58,3 +58,9 @@ Le modèle local reste chargé en mémoire et les consignes + outils sont mis en
 ## Gmail, Agenda, musique
 - **Google** : bouton ⚙ → coller le fichier OAuth (client « Application de bureau » créé dans Google Cloud) → CONNECTER GOOGLE (sur le PC). Jarvis lit/cherche les mails, crée des brouillons, envoie (avec validation), gère l'agenda.
 - **Musique** : lecture/pause/suivant/volume et recherche Spotify, sur le PC ou le téléphone.
+
+## Auto-apprentissage
+- **Leçons** : après chaque tâche, Jarvis analyse ce qui a marché ou échoué et en tire des règles (`data/lessons.json`), réinjectées quand une demande similaire revient.
+- **Faits** : ce que tu dis de toi est retenu automatiquement (`data/notes.json`).
+- **Mémoire longue** : toutes les conversations sont archivées (`data/archive.jsonl`) ; « tu te souviens de… ? » → outil `recall`.
+- **Compétences** : Jarvis écrit ses propres outils Python (`data/skills/`). Chaque nouvelle compétence s'affiche avec son code et attend ton AUTORISER. Idées de compétences proposées dans le journal (💡).

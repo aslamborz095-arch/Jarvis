@@ -90,6 +90,8 @@ def system_prompt():
         "Tu contrôles son PC (outils sans préfixe) et son téléphone Android Redmi (outils phone_*). "
         "Pour agir dans une appli du téléphone : phone_open, puis phone_screen pour voir l'écran, puis phone_tap / phone_type. "
         "Tu gères aussi Gmail (gmail_*), Google Agenda (calendar_*) et la musique (media_control, music_search) sur le PC ou le téléphone. "
+        "Tu apprends en continu : recall pour chercher dans ta mémoire longue ; si une tâche revient souvent ou qu'il te manque un outil, "
+        "propose puis crée une compétence avec create_skill (l'utilisateur la valide). "
         "Tu as des yeux : screen_look (écran du PC) et phone_look (écran du téléphone) quand il faut voir une image, une vidéo ou une interface. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
@@ -227,14 +229,20 @@ def ask(message):
     jour = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"][now.weekday()]
     HISTORY.append({"role": "user", "content": f"[{jour} {now:%d/%m/%Y %H:%M}] {message}"})
     log, err = [], ""
+    import learning
+    lessons = learning.relevant_lessons(message)
     for backend in order:
         keep = 30 if backend in ("claude", "ollama") else 12
-        st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-keep:]],
-              "queue": [], "results": [], "steps": 0, "log": log}
+        msgs = [dict(m) for m in HISTORY[-keep:]]
+        if lessons:
+            msgs[-1]["content"] = "[Leçons apprises lors de tâches similaires : " + " | ".join(lessons) + "]\n" + msgs[-1]["content"]
+        st = {"backend": backend, "messages": msgs, "queue": [], "results": [], "steps": 0, "log": log}
         try:
             text = _call_model(st)
             res = _finish(st, text) if text is not None else _loop(st)
             res["backend"] = backend
+            if not res.get("confirm"):
+                learn(message, res)
             return res
         except providers.ProviderError as e:
             providers.cool(e)
@@ -244,6 +252,16 @@ def ask(message):
             err = str(e)
             log.append(f"{backend.replace('oa:', '')} en erreur → IA suivante")
     return {"reply": f"Toutes mes IA sont indisponibles pour le moment, monsieur. ({err[:150]})", "backend": None, "log": log}
+
+
+def learn(message, res):
+    """Archive l'échange et lance l'analyse en arrière-plan (leçons, faits, idées de compétences)."""
+    try:
+        import learning, wake
+        learning.archive(message, res.get("reply", ""), res.get("log", []))
+        learning.reflect_async(message, res.get("reply", ""), res.get("log", []), push=wake.push)
+    except Exception:
+        pass
 
 
 def resume(pid, approve):

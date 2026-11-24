@@ -164,11 +164,12 @@ SPECS = [
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
 
-import phone, vision, google_apps, media
-SPECS += phone.SPECS + vision.SPECS + google_apps.SPECS + media.SPECS
-for m in (phone, vision, google_apps, media):
+import phone, vision, google_apps, media, learning
+SPECS += phone.SPECS + vision.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS
+for m in (phone, vision, google_apps, media, learning):
     FUNCS.update(m.FUNCS)
-DANGEROUS |= google_apps.DANGEROUS
+DANGEROUS |= google_apps.DANGEROUS | learning.DANGEROUS
+learning.load_skills()   # compétences écrites par Jarvis
 
 
 def execute(name, args):
