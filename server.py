@@ -76,7 +76,8 @@ def status(request: Request, x_jarvis_token: str = Header("")):
     return {
         "online": net,
         "claude": bool(os.getenv("ANTHROPIC_API_KEY")) and net,
-        "groq": bool(os.getenv("GROQ_API_KEY")) and net,
+        "groq": net and any(p["status"] == "ok" for p in __import__("providers").state()),
+        "brains": __import__("providers").state(),
         "local": brain.ollama_ok(),
         "cpu": psutil.cpu_percent(),
         "ram": psutil.virtual_memory().percent,
@@ -85,6 +86,9 @@ def status(request: Request, x_jarvis_token: str = Header("")):
         "version": (updater.current() or "")[:7],
         "update": updater.STATE["status"],
         "wake": wake.STATE["enabled"],
+        "wake_mic": wake.STATE.get("device"),
+        "wake_level": wake.STATE.get("level"),
+        "wake_score": wake.STATE.get("score"),
         "wake_error": wake.STATE["error"],
     }
 
@@ -103,6 +107,14 @@ def update_now(request: Request, x_jarvis_token: str = Header("")):
     if changed:
         threading.Timer(2, updater._restart).start()
     return {"changed": changed, "status": updater.STATE["status"]}
+
+
+@app.get("/api/mics")
+def mics(request: Request):
+    auth("", request)
+    import sounddevice as sd
+    return [{"id": i, "name": d["name"], "default": i == sd.default.device[0]}
+            for i, d in enumerate(sd.query_devices()) if d["max_input_channels"] > 0]
 
 
 @app.get("/api/log")
@@ -165,12 +177,8 @@ def config(c: Config, request: Request, x_jarvis_token: str = Header("")):
             return {"ok": False, "error": str(e)[:300]}
         _set_env("ANTHROPIC_API_KEY", key)
     if c.groq_key:
-        key = c.groq_key.strip()
-        import httpx
-        r = httpx.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=20)
-        if r.status_code != 200:
-            return {"ok": False, "error": f"Groq {r.status_code} : {r.text[:200]}"}
-        _set_env("GROQ_API_KEY", key)
+        import providers
+        providers.add("groq", c.groq_key)
     return {"ok": True, "has_key": bool(os.getenv("ANTHROPIC_API_KEY")), "has_groq": bool(os.getenv("GROQ_API_KEY")),
             "model": brain.CLAUDE_MODEL}
 
@@ -215,6 +223,46 @@ def google_callback(request: Request, code: str = "", error: str = ""):
                         "<h1>✔ Google connecté à Jarvis</h1><p>Vous pouvez fermer cet onglet.</p></body>")
 
 
+class Brain(BaseModel):
+    id: str
+    key: str
+    model: str = ""
+
+
+@app.get("/api/providers")
+def providers_list(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import providers
+    return {"active": providers.state(), "presets": providers.PRESETS, "claude": bool(os.getenv("ANTHROPIC_API_KEY"))}
+
+
+@app.post("/api/providers")
+def providers_add(b: Brain, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import providers
+    p = providers.PRESETS.get(b.id)
+    if not p:
+        return {"ok": False, "error": "Fournisseur inconnu"}
+    test = {"id": b.id, "base": p["base"], "model": b.model or p["model"], "key": b.key.strip()}
+    try:
+        providers.call(test, [{"role": "user", "content": "Réponds juste OK."}], None, max_tokens=5)
+    except providers.ProviderError as e:
+        if e.status in (401, 403):
+            return {"ok": False, "error": f"Clé refusée ({e.status})"}
+        if e.status != 429:   # 429 = clé valide mais quota momentanément atteint
+            return {"ok": False, "error": str(e)[:200]}
+    providers.add(b.id, b.key, b.model)
+    return {"ok": True, "active": providers.state()}
+
+
+@app.delete("/api/providers/{pid}")
+def providers_del(pid: str, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import providers
+    providers.remove(pid)
+    return {"ok": True, "active": providers.state()}
+
+
 class SyncIn(BaseModel):
     notes: list = []
     history: list = []
@@ -224,7 +272,10 @@ class SyncIn(BaseModel):
 def sync_get(request: Request, x_jarvis_token: str = Header("")):
     """Mémoire commune : le téléphone récupère notes + conversation (+ clé Groq pour le mode autonome)."""
     auth(x_jarvis_token, request)
-    return {"notes": tools.load_notes(), "history": brain.HISTORY[-30:], "groq_key": os.getenv("GROQ_API_KEY", "")}
+    import providers
+    g = next((p for p in providers.load() if p["id"] == "groq"), None)
+    return {"notes": tools.load_notes(), "history": brain.HISTORY[-30:], "groq_key": g["key"] if g else os.getenv("GROQ_API_KEY", ""),
+            "brains": [{k: p[k] for k in ("id", "base", "model", "key")} for p in providers.load()]}
 
 
 @app.post("/api/sync")

@@ -28,9 +28,12 @@ def ask(img, question):
             {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}},
             {"type": "text", "text": q}]}])
         return r.content[0].text, (w, h)
-    if os.getenv("GROQ_API_KEY"):
+    import providers
+    g = next((p for p in providers.available() if p["id"] == "groq"), None)
+    gkey = g["key"] if g else os.getenv("GROQ_API_KEY")
+    if gkey:
         r = httpx.post("https://api.groq.com/openai/v1/chat/completions", timeout=90,
-                       headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"},
+                       headers={"Authorization": f"Bearer {gkey}"},
                        json={"model": GROQ_VISION, "max_tokens": 800, "messages": [{"role": "user", "content": [
                            {"type": "text", "text": q},
                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{data}"}}]}]})

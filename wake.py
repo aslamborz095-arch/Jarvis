@@ -6,8 +6,9 @@ import os, time, wave, queue, tempfile, threading, subprocess, collections
 
 import brain, stt
 
-THRESHOLD = float(os.getenv("WAKE_THRESHOLD", "0.5"))
-STATE = {"enabled": False, "busy": False, "error": None}
+THRESHOLD = float(os.getenv("WAKE_THRESHOLD", "0.35"))
+DEVICE = os.getenv("WAKE_DEVICE") or None   # nom ou numéro du micro (sinon micro par défaut)
+STATE = {"enabled": False, "busy": False, "error": None, "level": 0.0, "score": 0.0, "device": None}
 EVENTS = collections.deque(maxlen=60)
 _counter = [0]
 RATE, CHUNK = 16000, 1280  # 80 ms
@@ -42,7 +43,7 @@ def _rms(a):
 
 def _record(q, noise):
     """Enregistre la commande jusqu'au silence (max 12 s)."""
-    thr = max(400.0, noise * 3)
+    thr = max(150.0, noise * 2.2)
     frames, started, silent = [], False, 0
     t0 = time.time()
     while time.time() - t0 < 12:
@@ -108,13 +109,22 @@ def _run():
     def cb(indata, frames, t, status):
         q.put(indata[:, 0].copy())
 
-    with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK, callback=cb):
+    dev = int(DEVICE) if DEVICE and DEVICE.isdigit() else DEVICE
+    with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK, callback=cb, device=dev):
         STATE["enabled"], STATE["error"] = True, None
+        try:
+            STATE["device"] = sd.query_devices(dev, "input")["name"]
+        except Exception:
+            pass
         noise = 300.0
         while True:
             c = q.get()
-            noise = 0.98 * noise + 0.02 * _rms(c)   # bruit ambiant moyen
-            if max(model.predict(c).values()) >= THRESHOLD:
+            r = _rms(c)
+            noise = 0.98 * noise + 0.02 * r   # bruit ambiant moyen
+            STATE["level"] = round(max(STATE["level"] * 0.9, r))
+            score = max(model.predict(c).values())
+            STATE["score"] = round(max(STATE["score"] * 0.95, float(score)), 2)
+            if score >= THRESHOLD:
                 _handle(q, noise)
                 model.reset()
 

@@ -137,3 +137,9 @@ footer{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;gap:10px;al
   #btn-hands{display:none}.tool{width:46px;height:46px}#input{height:46px;font-size:16px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+
+.brain{display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;border:1px solid var(--line);background:rgba(53,224,255,.05);font-size:14px}
+.brain b{flex:1;font-weight:600}.brain small{color:var(--mute);font-size:12px}.brain .st{font-size:11px;letter-spacing:.1em}
+.brain .st.ok{color:var(--ok)}.brain .st.wait{color:var(--hot)}
+.brain button{background:none;border:1px solid var(--line);color:var(--mute);width:32px;height:32px;cursor:pointer}
+.box a{color:var(--c)}

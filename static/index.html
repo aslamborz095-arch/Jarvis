@@ -91,11 +91,17 @@
 
 <div id="cfg" class="modal" hidden>
   <div class="box">
-    <div class="ptitle">CERVEAU EN LIGNE</div>
+    <div class="ptitle">CERVEAUX EN LIGNE</div>
+    <p class="muted">Jarvis essaie chaque IA dans l'ordre ; quand l'une n'a plus de crédit ou de quota, il passe à la suivante, puis au cerveau local.</p>
+    <div id="brains"></div>
+    <select id="br-id"></select>
+    <p id="br-info" class="muted"></p>
+    <input id="br-key" type="text" autocomplete="off" spellcheck="false" placeholder="Clé API de ce fournisseur">
+    <div class="btns"><button id="br-add">AJOUTER CETTE IA</button></div>
+
+    <div class="ptitle" style="margin-top:22px">CLAUDE (PAYANT, LE PLUS INTELLIGENT)</div>
     <p id="cfg-status" class="muted">—</p>
-    <p class="muted"><b>Gratuit :</b> clé Groq (console.groq.com → API Keys).<br><b>Payant, le plus intelligent :</b> clé Claude (console.anthropic.com).</p>
-    <input id="cfg-groq" type="text" autocomplete="off" spellcheck="false" placeholder="Clé Groq gratuite (gsk_…)">
-    <input id="cfg-key" type="text" autocomplete="off" spellcheck="false" placeholder="Collez la clé API (sk-ant-…)">
+    <input id="cfg-key" type="text" autocomplete="off" spellcheck="false" placeholder="Clé API Claude (sk-ant-…)">
     <select id="cfg-model">
       <option value="claude-sonnet-5-5">Sonnet 5.5 — équilibré (recommandé)</option>
       <option value="claude-haiku-5-5">Haiku 5.5 — le plus rapide et économique</option>

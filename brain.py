@@ -1,8 +1,8 @@
-"""Cerveau de Jarvis : Claude en ligne, Ollama en local si coupure."""
+"""Cerveau de Jarvis : cascade d'IA en ligne (Claude puis gratuites), Ollama en local en dernier recours."""
 import json, os, socket, uuid, datetime
 
 import httpx
-import tools
+import tools, providers
 
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -63,14 +63,21 @@ def start_ollama(wait=25):
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
-def pick_backend():
-    if os.getenv("ANTHROPIC_API_KEY") and online():
-        return "claude"
-    if os.getenv("GROQ_API_KEY") and online():
-        return "groq"
+def chain():
+    """Ordre d'essai : Claude (si clé) → IA en ligne configurées (sans celles en pause) → local."""
+    out = []
+    if online():
+        if os.getenv("ANTHROPIC_API_KEY") and providers.COOL.get("claude", (0,))[0] < __import__("time").time():
+            out.append("claude")
+        out += ["oa:" + p["id"] for p in providers.available()]
     if ollama_ok() or start_ollama():
-        return "ollama"
-    return None
+        out.append("ollama")
+    return out
+
+
+def pick_backend():
+    c = chain()
+    return c[0] if c else None
 
 
 def system_prompt():
@@ -128,27 +135,33 @@ def _call_model(st):
     """Appelle le modèle ; remplit st['queue'] ou renvoie le texte final."""
     if st["backend"] == "claude":
         import anthropic
-        r = anthropic.Anthropic().messages.create(
-            model=CLAUDE_MODEL, max_tokens=4096,
-            system=[{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}],
-            tools=_claude_tools(), messages=st["messages"])
+        try:
+            r = anthropic.Anthropic().messages.create(
+                model=CLAUDE_MODEL, max_tokens=4096,
+                system=[{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}],
+                tools=_claude_tools(), messages=st["messages"])
+        except anthropic.APIStatusError as e:
+            raise providers.ProviderError("claude", e.status_code, str(e), e.response.headers.get("retry-after"))
+        except anthropic.APIConnectionError as e:
+            raise providers.ProviderError("claude", 503, str(e))
         st["messages"].append({"role": "assistant", "content": [b.model_dump(exclude_none=True) for b in r.content]})
         calls = [{"id": b.id, "name": b.name, "args": b.input} for b in r.content if b.type == "tool_use"]
         text = " ".join(b.text for b in r.content if b.type == "text").strip()
-    elif st["backend"] == "groq":
+    elif st["backend"].startswith("oa:"):
+        p = next((x for x in providers.load() if x["id"] == st["backend"][3:]), None)
         specs = select_tools(st["messages"])
-        gtools = [{"type": "function", "function": {"name": n, "description": d, "parameters": s}} for n, d, s in specs]
-        r = httpx.post("https://api.groq.com/openai/v1/chat/completions", timeout=120,
-                       headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"},
-                       json={"model": GROQ_MODEL, "tools": gtools, "max_tokens": 1200,
-                             "messages": [{"role": "system", "content": system_prompt()}] + st["messages"]})
-        if r.status_code != 200:
-            raise RuntimeError(f"Groq {r.status_code} : {r.text[:200]}")
-        msg = r.json()["choices"][0]["message"]
+        otools = [{"type": "function", "function": {"name": n, "description": d, "parameters": s}} for n, d, s in specs]
+        msg = providers.call(p, [{"role": "system", "content": system_prompt()}] + st["messages"], otools)
         msg = {k: v for k, v in msg.items() if k in ("role", "content", "tool_calls")}
+        msg["role"] = "assistant"
         st["messages"].append(msg)
-        calls = [{"id": c["id"], "name": c["function"]["name"],
-                  "args": json.loads(c["function"].get("arguments") or "{}")} for c in msg.get("tool_calls") or []]
+        calls = []
+        for c in msg.get("tool_calls") or []:
+            try:
+                args = json.loads(c["function"].get("arguments") or "{}")
+            except Exception:
+                args = {}
+            calls.append({"id": c["id"], "name": c["function"]["name"], "args": args})
         text = (msg.get("content") or "").strip()
     else:
         r = httpx.post(f"{OLLAMA_URL}/api/chat", timeout=600, json={
@@ -167,7 +180,7 @@ def _flush(st):
     if st["backend"] == "claude":
         st["messages"].append({"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": c["id"], "content": out} for c, out in st["results"]]})
-    elif st["backend"] == "groq":
+    elif st["backend"].startswith("oa:"):
         for c, out in st["results"]:
             st["messages"].append({"role": "tool", "tool_call_id": c["id"], "content": out[:6000]})
     else:
@@ -206,30 +219,31 @@ def _finish(st, text):
 
 
 def ask(message):
-    backend = pick_backend()
-    if not backend:
+    order = chain()
+    if not order:
         return {"reply": "Mon cerveau local démarre encore. Réessayez dans une minute, monsieur.",
                 "backend": None, "log": []}
     now = datetime.datetime.now()
     jour = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"][now.weekday()]
     HISTORY.append({"role": "user", "content": f"[{jour} {now:%d/%m/%Y %H:%M}] {message}"})
-    keep = 12 if backend == "groq" else 30
-    st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-keep:]],
-          "queue": [], "results": [], "steps": 0, "log": []}
-    try:
-        text = _call_model(st)
-        return _finish(st, text) if text is not None else _loop(st)
-    except Exception as e:
-        err = str(e)
-        if backend in ("claude", "groq") and ollama_ok():   # bascule locale si le cerveau en ligne plante
-            st["log"].append(f"cerveau en ligne indisponible ({err[:120]}) → cerveau local")
-            st.update(backend="ollama", messages=[dict(m) for m in HISTORY[-30:]], queue=[], results=[], steps=0)
-            try:
-                text = _call_model(st)
-                return _finish(st, text) if text is not None else _loop(st)
-            except Exception as e2:
-                err = str(e2)
-        return {"reply": f"Je rencontre un problème, monsieur : {err[:200]}", "backend": backend, "log": st["log"]}
+    log, err = [], ""
+    for backend in order:
+        keep = 30 if backend in ("claude", "ollama") else 12
+        st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-keep:]],
+              "queue": [], "results": [], "steps": 0, "log": log}
+        try:
+            text = _call_model(st)
+            res = _finish(st, text) if text is not None else _loop(st)
+            res["backend"] = backend
+            return res
+        except providers.ProviderError as e:
+            providers.cool(e)
+            err = str(e)
+            log.append(f"{backend.replace('oa:', '')} indisponible ({e.status}) → IA suivante")
+        except Exception as e:
+            err = str(e)
+            log.append(f"{backend.replace('oa:', '')} en erreur → IA suivante")
+    return {"reply": f"Toutes mes IA sont indisponibles pour le moment, monsieur. ({err[:150]})", "backend": None, "log": log}
 
 
 def resume(pid, approve):

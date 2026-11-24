@@ -40,7 +40,7 @@ async function sync() {
     line("Mémoire synchronisée avec le PC.", "log");
   }
   const d = await api("/api/sync");
-  LS.set("jarvis_notes", d.notes || []); LS.set("jarvis_hist", d.history || []);
+  LS.set("jarvis_notes", d.notes || []); LS.set("jarvis_hist", d.history || []); LS.set("jarvis_brains", d.brains || []);
   if (d.groq_key) store.set("jarvis_groq", d.groq_key);
 }
 function setSolo(on) {
@@ -48,14 +48,17 @@ function setSolo(on) {
   SOLO = on;
   if (on) {
     chip("st-net", "AUTONOME", "warn");
-    chip("st-brain", store.get("jarvis_groq") ? "GROQ DIRECT" : "AUCUN CERVEAU", store.get("jarvis_groq") ? "ok" : "bad");
+    const nb = LS.get("jarvis_brains", []).length || (store.get("jarvis_groq") ? 1 : 0);
+    chip("st-brain", nb ? nb + " IA DIRECT" : "AUCUN CERVEAU", nb ? "ok" : "bad");
     chip("st-wake", "MICRO TEL.", "ok"); chip("st-phone", "PC HORS LIGNE", "warn");
     line("PC injoignable : mode autonome. Ce que vous dites sera ajouté à la mémoire commune au retour du PC.", "log");
   } else sync().catch(() => {});
 }
 async function soloAsk(text) {
-  const key = store.get("jarvis_groq");
-  if (!key) return { reply: "Mode autonome impossible : connectez-vous une fois au PC pour récupérer la clé Groq." };
+  const brains = LS.get("jarvis_brains", []);
+  if (!brains.length && store.get("jarvis_groq")) brains.push({ id: "groq", base: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", key: store.get("jarvis_groq") });
+  if (!brains.length) return { reply: "Mode autonome impossible : ouvrez Jarvis une fois avec le PC allumé pour récupérer vos IA." };
+  let bi = 0;
   const notes = LS.get("jarvis_notes", []), hist = LS.get("jarvis_hist", []);
   const d = new Date(), stamp = d.toLocaleString("fr-FR", { weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const msgs = [{ role: "system", content: "Tu es JARVIS, l'assistant personnel d'Aslambek. Le PC est éteint : tu réponds depuis son téléphone, sans accès au PC. Français, court, ton calme et légèrement britannique, pas de markdown (réponse lue à voix haute). Utilise remember pour retenir une info durable.\nCe que tu sais de lui :\n" + (notes.slice(-50).map((n) => "- " + n.note).join("\n") || "(rien)") },
@@ -63,10 +66,19 @@ async function soloAsk(text) {
   const tools = [{ type: "function", function: { name: "remember", description: "Mémorise durablement une info sur l'utilisateur.", parameters: { type: "object", properties: { note: { type: "string" } }, required: ["note"] } } }];
   const pend = LS.get("jarvis_pending", { notes: [], history: [] }), log = [];
   for (let step = 0; step < 4; step++) {
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST",
-      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "openai/gpt-oss-120b", messages: msgs, tools, max_tokens: 900 }) });
-    if (!r.ok) return { reply: "Le cerveau en ligne ne répond pas (" + r.status + ")." };
+    let r = null;
+    for (; bi < brains.length; bi++) {           // cascade : IA suivante si quota/crédit épuisé
+      const b = brains[bi];
+      try {
+        r = await fetch(b.base.replace(/\/$/, "") + "/chat/completions", { method: "POST",
+          headers: { Authorization: "Bearer " + b.key, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: b.model, messages: msgs, tools, max_tokens: 900 }) });
+        if (r.ok) break;
+        log.push(b.id + " indisponible (" + r.status + ") → IA suivante");
+      } catch { log.push(b.id + " injoignable → IA suivante"); }
+      r = null;
+    }
+    if (!r) return { reply: "Aucune IA en ligne ne répond pour le moment, monsieur.", log };
     const m = (await r.json()).choices[0].message;
     msgs.push({ role: "assistant", content: m.content || "", ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) });
     if (!m.tool_calls?.length) {
@@ -109,7 +121,8 @@ async function poll() {
     bar("cpu", s.cpu); bar("ram", s.ram); bar("bat", s.battery, 101);
     window.FX && FX.pushCpu(s.cpu);
     chip("st-net", s.online ? "EN LIGNE" : "HORS LIGNE", s.online ? "ok" : "warn");
-    chip("st-brain", s.claude ? "CLAUDE" : s.groq ? "GROQ" : s.local ? "LOCAL" : "AUCUN CERVEAU", s.claude || s.groq ? "ok" : s.local ? "warn" : "bad");
+    const live = (s.brains || []).filter((b) => b.status === "ok");
+    chip("st-brain", s.claude ? "CLAUDE" : live.length ? live[0].name.toUpperCase() + (live.length > 1 ? " +" + (live.length - 1) : "") : s.local ? "LOCAL" : "AUCUN CERVEAU", s.claude || live.length ? "ok" : s.local ? "warn" : "bad");
     chip("st-wake", s.wake ? "HEY JARVIS" : "MICRO OFF", s.wake ? "ok" : "warn");
     $("ver").textContent = (s.version ? "VERSION " + s.version.toUpperCase() : "") + "  ·  " + (s.update || "").toUpperCase();
   } catch (e) { if (e.message !== "auth") setSolo(true); }
@@ -231,15 +244,16 @@ async function startListen() {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
     const an = ac.createAnalyser(); an.fftSize = 1024; ac.createMediaStreamSource(stream).connect(an);
     const buf = new Uint8Array(an.fftSize);
-    let spoke = false, quiet = 0, t0 = Date.now(), noise = 0.01;
+    let spoke = false, quiet = 0, t0 = Date.now(), noise = 0, peak = 0, samples = [];
     meter = setInterval(() => {
       an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) s += ((v - 128) / 128) ** 2;
-      const lvl = Math.sqrt(s / buf.length);
-      if (window.FX) FX.level = Math.min(1, lvl * 6);
-      if (Date.now() - t0 < 400) { noise = Math.max(noise, lvl); return; }      // calibre le bruit de fond
-      const loud = lvl > Math.max(0.025, noise * 2.2);
+      const lvl = Math.sqrt(s / buf.length); peak = Math.max(peak, lvl);
+      if (window.FX) FX.level = Math.min(1, lvl * 18);            // anneau visible même avec un micro faible
+      if (Date.now() - t0 < 350) { samples.push(lvl); return; }      // bruit de fond (médiane)
+      if (!noise) noise = samples.sort((a, b) => a - b)[samples.length >> 1] || 0.003;
+      const loud = lvl > Math.max(0.008, noise * 1.8);
       if (loud) { spoke = true; quiet = 0; } else if (spoke) quiet += 50;
-      if ((spoke && quiet > 1300) || Date.now() - t0 > 15000 || (!spoke && Date.now() - t0 > 7000)) stopListen();
+      if ((spoke && quiet > 1400) || Date.now() - t0 > 15000) stopListen();
     }, 50);
     const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || "";
     rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); chunks = [];
@@ -248,14 +262,14 @@ async function startListen() {
       clearInterval(meter); if (window.FX) FX.level = 0; ac.close();
       stream.getTracks().forEach((t) => t.stop());
       rec = null; $("btn-mic").classList.remove("on");
-      if (!spoke) { line("Je ne vous ai pas entendu, monsieur. Vérifiez le micro sélectionné et parlez plus près."); return setState(""); }
+      if (peak < 0.003) { line("Le micro ne capte aucun son : vérifiez le micro sélectionné (Windows : Paramètres → Son → Entrée) et son volume."); return setState(""); }
       const type = chunks[0]?.type || mime || "audio/webm";
       const ext = type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm";
       const fd = new FormData(); fd.append("audio", new Blob(chunks, { type }), "voice." + ext);
       setState("thinking", "TRANSCRIPTION");
       try {
         const r = await api("/api/transcribe", { method: "POST", body: fd });
-        if (r.text) send(r.text); else { line("Je n'ai pas compris, pouvez-vous répéter ?"); setState(""); }
+        if (r.text) send(r.text); else { line(`Je n'ai pas compris, pouvez-vous répéter ? (niveau micro : ${Math.round(peak * 1000)})`); setState(""); }
       } catch { line("Reconnaissance vocale indisponible."); setState(""); }
     };
     rec.start(250); $("btn-mic").classList.add("on"); setState("listening");
@@ -306,6 +320,43 @@ async function gStatus() {
   } catch {}
 }
 $("btn-cfg").addEventListener("click", gStatus);
+let PRESETS = {};
+async function loadBrains() {
+  try {
+    const r = await api("/api/providers"); PRESETS = r.presets || {};
+    $("brains").innerHTML = "";
+    r.active.forEach((b, i) => {
+      const d = document.createElement("div"); d.className = "brain";
+      const name = document.createElement("b"); name.textContent = `${i + 1}. ${b.name}`;
+      const m = document.createElement("small"); m.textContent = b.model;
+      const st = document.createElement("span"); st.className = "st " + (b.status === "ok" ? "ok" : "wait"); st.textContent = b.status === "ok" ? "PRÊT" : b.status.toUpperCase();
+      const del = document.createElement("button"); del.textContent = "✕"; del.title = "Retirer";
+      del.onclick = async () => { await api("/api/providers/" + b.id, { method: "DELETE" }); loadBrains(); };
+      d.append(name, m, st, del); $("brains").appendChild(d);
+    });
+    if (!r.active.length) $("brains").innerHTML = '<p class="muted">Aucune IA en ligne : Jarvis utilise le cerveau local.</p>';
+    const have = new Set(r.active.map((b) => b.id));
+    $("br-id").innerHTML = Object.entries(PRESETS).filter(([id]) => !have.has(id)).sort(([, a], [, b]) => (b.free - a.free) || (a.rank - b.rank))
+      .map(([id, p]) => `<option value="${id}">${p.name}${p.free ? " — gratuit" : " — payant"}</option>`).join("");
+    showPreset();
+  } catch {}
+}
+function showPreset() {
+  const p = PRESETS[$("br-id").value]; if (!p) { $("br-info").textContent = "Toutes les IA connues sont ajoutées."; return; }
+  $("br-info").innerHTML = "";
+  const a = document.createElement("a"); a.href = p.signup; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Créer la clé : " + p.signup.replace(/^https?:\/\//, "");
+  const t = document.createElement("div"); t.textContent = p.note || "";
+  $("br-info").append(a, t);
+}
+$("br-id").onchange = showPreset;
+$("btn-cfg").addEventListener("click", loadBrains);
+$("br-add").onclick = async () => {
+  const id = $("br-id").value, key = $("br-key").value.trim(); if (!id || !key) return;
+  $("cfg-out").textContent = "Test de la clé…";
+  const r = await api("/api/providers", { method: "POST", body: JSON.stringify({ id, key }) });
+  $("cfg-out").textContent = r.ok ? "✔ " + PRESETS[id].name + " ajoutée à la cascade." : "✖ " + r.error;
+  if (r.ok) { $("br-key").value = ""; loadBrains(); poll(); }
+};
 $("g-save").onclick = async () => {
   const r = await api("/api/google", { method: "POST", body: JSON.stringify({ json: $("g-json").value.trim() }) });
   $("g-status").textContent = r.ok ? "✔ Fichier enregistré. Cliquez CONNECTER GOOGLE." : "✖ " + r.error;
@@ -319,9 +370,9 @@ $("g-connect").onclick = () => {
 $("cfg-save").onclick = async () => {
   $("cfg-out").textContent = "Vérification de la clé…";
   try {
-    const r = await api("/api/config", { method: "POST", body: JSON.stringify({ anthropic_key: $("cfg-key").value.trim(), groq_key: $("cfg-groq").value.trim(), claude_model: $("cfg-model").value }) });
+    const r = await api("/api/config", { method: "POST", body: JSON.stringify({ anthropic_key: $("cfg-key").value.trim(), claude_model: $("cfg-model").value }) });
     $("cfg-out").textContent = r.ok ? (r.has_key ? "✔ Claude activé (" + r.model + ")." : r.has_groq ? "✔ Clé Groq valide, cerveau gratuit activé." : "Enregistré.") : "✖ Clé refusée : " + r.error;
-    if (r.ok) { $("cfg-key").value = ""; $("cfg-groq").value = ""; poll(); }
+    if (r.ok) { $("cfg-key").value = ""; poll(); }
   } catch (e) { $("cfg-out").textContent = "Erreur : " + e.message; }
 };
 
