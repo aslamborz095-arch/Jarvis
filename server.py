@@ -109,6 +109,26 @@ async def transcribe(request: Request, audio: UploadFile = File(...), x_jarvis_t
     return {"text": text}
 
 
+class Pair(BaseModel):
+    host: str
+    code: str = ""
+
+
+@app.get("/api/phone")
+def phone_status(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import phone
+    return phone.status()
+
+
+@app.post("/api/phone")
+def phone_link(p: Pair, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import phone
+    out = phone.pair(p.host, p.code) if p.code else phone.connect(p.host)
+    return {"output": out, **phone.status()}
+
+
 @app.post("/api/pointer")
 def pointer(request: Request, p: Pointer, x_jarvis_token: str = Header("")):
     """Contrôle de la souris du PC par les mains (caméra)."""
@@ -128,6 +148,7 @@ if __name__ == "__main__":
     import uvicorn
     if os.getenv("AUTO_UPDATE", "true").lower() == "true":
         updater.start_background()
+    brain.warmup()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))

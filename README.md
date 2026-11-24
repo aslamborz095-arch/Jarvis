@@ -48,3 +48,9 @@ Jarvis vérifie le dépôt GitHub `aslamborz095-arch/jarvis` au démarrage puis 
 
 ## Mot d'éveil « Hey Jarvis »
 Sur le PC, Jarvis écoute en permanence le micro (100 % local, rien n'est envoyé). Dis **« Hey Jarvis »** → bip → donne ton ordre → il répond à voix haute. Les échanges s'affichent aussi dans l'interface (PC et téléphone). Voyant **HEY JARVIS** vert = actif. Sensibilité : `WAKE_THRESHOLD` dans `.env` (plus bas = plus sensible). Désactiver : `WAKE_WORD=false`.
+
+## Téléphone Android (Redmi)
+Jarvis pilote le téléphone par ADB sans fil : ouvrir des applis, lire l'écran, toucher, écrire, glisser, notifications, liens, préparer appels et SMS. Association une seule fois via le bouton 📱 de l'interface (les étapes y sont décrites). Ensuite le téléphone se reconnecte tout seul quand il est sur le même Wi-Fi que le PC.
+
+## Vitesse
+Le modèle local reste chargé en mémoire et les consignes + outils sont mis en cache (préchauffage au démarrage) : seules les nouvelles phrases sont traitées. Avec une clé Claude, le cache de prompt est aussi activé.

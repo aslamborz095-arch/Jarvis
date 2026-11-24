@@ -3,70 +3,104 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#02070b">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#010409">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icon.svg">
 <title>J.A.R.V.I.S.</title>
 <link rel="stylesheet" href="/static/hud.css">
 </head>
-<body>
-<div class="grid"></div>
+<body class="booting">
+<canvas id="bg"></canvas>
+<div class="vignette"></div>
 <div class="scan"></div>
 
+<!-- Séquence de démarrage -->
+<div id="boot">
+  <div class="boot-logo">J.A.R.V.I.S.</div>
+  <div id="boot-lines"></div>
+  <div class="boot-bar"><i></i></div>
+</div>
+
 <header>
-  <div class="brand">J.A.R.V.I.S.</div>
-  <div id="clock">--:--</div>
-  <div class="status">
-    <span id="st-net" class="pill">RÉSEAU</span>
-    <span id="st-brain" class="pill">CERVEAU</span>
-    <span id="st-wake" class="pill">MICRO</span>
+  <div class="brand">
+    <b>J.A.R.V.I.S.</b>
+    <small>Just A Rather Very Intelligent System</small>
+  </div>
+  <div class="clock"><span id="clock">--:--</span><span id="sec">00</span><div id="date"></div></div>
+  <div class="chips">
+    <span id="st-net" class="chip">RÉSEAU</span>
+    <span id="st-brain" class="chip">CERVEAU</span>
+    <span id="st-wake" class="chip">MICRO</span>
+    <span id="st-phone" class="chip">MOBILE</span>
   </div>
 </header>
 
-<aside class="gauges">
-  <div class="gauge"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.9"/><circle id="g-cpu" class="fg" cx="18" cy="18" r="15.9"/></svg><b id="v-cpu">--</b><small>CPU</small></div>
-  <div class="gauge"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.9"/><circle id="g-ram" class="fg" cx="18" cy="18" r="15.9"/></svg><b id="v-ram">--</b><small>RAM</small></div>
-  <div class="gauge"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.9"/><circle id="g-bat" class="fg" cx="18" cy="18" r="15.9"/></svg><b id="v-bat">--</b><small>BATT</small></div>
+<aside class="panel sys">
+  <div class="ptitle">SYSTÈME</div>
+  <div class="meter"><label>PROCESSEUR</label><div class="track"><i id="bar-cpu"></i></div><b id="v-cpu">--</b></div>
+  <div class="meter"><label>MÉMOIRE</label><div class="track"><i id="bar-ram"></i></div><b id="v-ram">--</b></div>
+  <div class="meter"><label>BATTERIE PC</label><div class="track"><i id="bar-bat"></i></div><b id="v-bat">--</b></div>
+  <div class="meter"><label>BATTERIE MOBILE</label><div class="track"><i id="bar-pbat"></i></div><b id="v-pbat">--</b></div>
+  <div class="spark"><canvas id="spark"></canvas></div>
+  <div class="pfoot" id="ver">—</div>
 </aside>
 
 <main>
-  <button id="reactor" aria-label="Parler à Jarvis">
-    <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
-    <div class="core"></div>
-  </button>
-  <div id="state">EN VEILLE</div>
-  <div id="date"></div>
-  <div id="ver"></div>
+  <button id="reactor" aria-label="Parler à Jarvis"><canvas id="core"></canvas></button>
+  <div id="state" data-text="EN VEILLE">EN VEILLE</div>
+  <div id="hint">Touchez le réacteur ou dites « Hey Jarvis »</div>
 </main>
 
-<section id="feed"></section>
-
-<div id="confirm" hidden>
-  <div class="cbox">
-    <div class="ctitle">AUTORISATION REQUISE</div>
-    <pre id="cbody"></pre>
-    <div class="cbtns"><button id="c-yes">AUTORISER</button><button id="c-no">REFUSER</button></div>
-  </div>
-</div>
+<section class="panel log">
+  <div class="ptitle">JOURNAL</div>
+  <div id="feed"></div>
+</section>
 
 <footer>
   <button id="btn-hands" class="tool" title="Contrôle par les mains">✋</button>
-  <form id="form"><input id="input" placeholder="Votre ordre, monsieur…" autocomplete="off"></form>
-  <button id="btn-mic" class="tool" title="Parler (ou Espace)">🎙</button>
+  <button id="btn-phone" class="tool" title="Téléphone">📱</button>
+  <form id="form"><input id="input" placeholder="Votre ordre, monsieur…" autocomplete="off" enterkeyhint="send"></form>
+  <button id="btn-mic" class="tool mic" title="Parler (Espace)">🎙</button>
 </footer>
+
+<div id="confirm" class="modal" hidden>
+  <div class="box warn">
+    <div class="ptitle">AUTORISATION REQUISE</div>
+    <pre id="cbody"></pre>
+    <div class="btns"><button id="c-no" class="ghost">REFUSER</button><button id="c-yes">AUTORISER</button></div>
+  </div>
+</div>
+
+<div id="phone" class="modal" hidden>
+  <div class="box">
+    <div class="ptitle">LIAISON MOBILE</div>
+    <p id="ph-status" class="muted">Vérification…</p>
+    <ol class="steps">
+      <li>Redmi : <b>Paramètres → À propos du téléphone</b> → touchez 7 fois <b>Version de MIUI/HyperOS</b>.</li>
+      <li><b>Paramètres supplémentaires → Options pour les développeurs</b> : activez <b>Débogage USB</b>, <b>Débogage USB (paramètres de sécurité)</b> et <b>Débogage sans fil</b>.</li>
+      <li>Touchez <b>Débogage sans fil → Associer l'appareil avec un code</b> et recopiez ci-dessous.</li>
+    </ol>
+    <input id="ph-host" placeholder="Adresse IP et port (ex : 192.168.1.20:37099)" inputmode="url">
+    <input id="ph-code" placeholder="Code d'association (6 chiffres)" inputmode="numeric">
+    <pre id="ph-out"></pre>
+    <div class="btns"><button id="ph-close" class="ghost">FERMER</button><button id="ph-go">ASSOCIER</button></div>
+  </div>
+</div>
+
+<div id="login" class="modal" hidden>
+  <div class="box">
+    <div class="ptitle">IDENTIFICATION</div>
+    <input id="token" type="text" autocomplete="off" autocapitalize="characters" placeholder="Code d'accès">
+    <div class="btns"><button id="t-ok">ENTRER</button></div>
+  </div>
+</div>
 
 <video id="cam" playsinline muted hidden></video>
 <canvas id="handfx"></canvas>
 <div id="cursor" hidden></div>
 
-<div id="login" hidden>
-  <div class="cbox">
-    <div class="ctitle">IDENTIFICATION</div>
-    <input id="token" type="password" placeholder="Code d'accès">
-    <div class="cbtns"><button id="t-ok">ENTRER</button></div>
-  </div>
-</div>
-
+<script src="/static/fx.js"></script>
 <script src="/static/hud.js"></script>
 <script type="module" src="/static/hands.js"></script>
 </body>

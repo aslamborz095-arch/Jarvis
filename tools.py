@@ -9,7 +9,7 @@ NOTES = BASE / "data" / "notes.json"
 NOTES.parent.mkdir(exist_ok=True)
 
 # Outils qui demandent ta validation (si CONFIRM_DANGEROUS=true)
-DANGEROUS = {"run_command", "write_file"}
+DANGEROUS = {"run_command", "write_file", "phone_shell"}
 
 
 def _trunc(s, n=8000):
@@ -150,6 +150,10 @@ SPECS = [
     ("remember", "Mémorise durablement une info sur l'utilisateur ou une préférence.", _p({"note": S})),
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
+
+import phone
+SPECS += phone.SPECS
+FUNCS.update(phone.FUNCS)
 
 
 def execute(name, args):

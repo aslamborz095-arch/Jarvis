@@ -9,6 +9,8 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 CONFIRM = os.getenv("CONFIRM_DANGEROUS", "true").lower() == "true"
 MAX_STEPS = 25
+# Modèle gardé en mémoire + contexte fixe : le début du prompt (consignes + outils) reste en cache
+OLLAMA_OPTS = {"keep_alive": -1, "options": {"num_ctx": int(os.getenv("OLLAMA_CTX", "6144")), "num_predict": 600}}
 
 HISTORY = []          # [{role, content}] texte seulement, partagé PC + téléphone
 PENDING = {}          # id -> état d'une tâche en attente de validation
@@ -59,15 +61,18 @@ def system_prompt():
         "Tu es JARVIS, l'assistant personnel d'Aslambek, sur son PC Windows. "
         "Réponds en français, court, précis, ton calme et légèrement britannique. "
         "Tes réponses sont lues à voix haute : pas de markdown, pas de listes longues. "
+        "Tu contrôles son PC (outils sans préfixe) et son téléphone Android Redmi (outils phone_*). "
+        "Pour agir dans une appli du téléphone : phone_open, puis phone_screen pour voir l'écran, puis phone_tap / phone_type. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
-        f"Date : {datetime.datetime.now():%A %d %B %Y %H:%M}.\n"
         f"Ce que tu sais de l'utilisateur :\n{notes}"
     )
 
 
 def _claude_tools():
-    return [{"name": n, "description": d, "input_schema": s} for n, d, s in tools.SPECS]
+    t = [{"name": n, "description": d, "input_schema": s} for n, d, s in tools.SPECS]
+    t[-1]["cache_control"] = {"type": "ephemeral"}
+    return t
 
 
 def _ollama_tools():
@@ -80,14 +85,15 @@ def _call_model(st):
     if st["backend"] == "claude":
         import anthropic
         r = anthropic.Anthropic().messages.create(
-            model=CLAUDE_MODEL, max_tokens=4096, system=system_prompt(),
+            model=CLAUDE_MODEL, max_tokens=4096,
+            system=[{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}],
             tools=_claude_tools(), messages=st["messages"])
         st["messages"].append({"role": "assistant", "content": [b.model_dump(exclude_none=True) for b in r.content]})
         calls = [{"id": b.id, "name": b.name, "args": b.input} for b in r.content if b.type == "tool_use"]
         text = " ".join(b.text for b in r.content if b.type == "text").strip()
     else:
         r = httpx.post(f"{OLLAMA_URL}/api/chat", timeout=600, json={
-            "model": OLLAMA_MODEL, "stream": False, "tools": _ollama_tools(),
+            "model": OLLAMA_MODEL, "stream": False, "tools": _ollama_tools(), **OLLAMA_OPTS,
             "messages": [{"role": "system", "content": system_prompt()}] + st["messages"]}).json()
         msg = r.get("message", {})
         st["messages"].append(msg)
@@ -141,7 +147,7 @@ def ask(message):
     if not backend:
         return {"reply": "Mon cerveau local démarre encore. Réessayez dans une minute, monsieur.",
                 "backend": None, "log": []}
-    HISTORY.append({"role": "user", "content": message})
+    HISTORY.append({"role": "user", "content": f"[{datetime.datetime.now():%A %d/%m/%Y %H:%M}] {message}"})
     st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-30:]],
           "queue": [], "results": [], "steps": 0, "log": []}
     try:
@@ -167,3 +173,18 @@ def resume(pid, approve):
         st["results"].append((c, "Refusé par l'utilisateur."))
         st["log"].append(f"{c['name']} → refusé")
     return _loop(st)
+
+
+def warmup():
+    """Charge le modèle local et met en cache consignes + outils dès le démarrage."""
+    import threading
+    def run():
+        try:
+            if ollama_ok() or start_ollama():
+                httpx.post(f"{OLLAMA_URL}/api/chat", timeout=900, json={
+                    "model": OLLAMA_MODEL, "stream": False, "tools": _ollama_tools(), **OLLAMA_OPTS,
+                    "messages": [{"role": "system", "content": system_prompt()},
+                                 {"role": "user", "content": "ok"}]})
+        except Exception:
+            pass
+    threading.Thread(target=run, daemon=True).start()
