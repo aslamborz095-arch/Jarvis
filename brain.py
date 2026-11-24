@@ -63,13 +63,31 @@ def start_ollama(wait=25):
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
-def chain():
-    """Ordre d'essai : Claude (si clé) → IA en ligne configurées (sans celles en pause) → local."""
+COMPLEX = ("analyse", "analyser", "code", "programme", "script", "cree", "creer", "competence", "strategie", "plan", "redige",
+           "rediger", "compare", "resume", "explique", "organise", "range", "plusieurs", "ensuite", "puis", "automatis", "projet")
+
+
+def level(message):
+    """simple / complexe : choisit le niveau d'IA juste nécessaire."""
+    m = _plain(message)
+    return "complex" if len(m.split()) > 35 or sum(k in m for k in COMPLEX) >= 1 else "simple"
+
+
+def chain(lvl="complex"):
+    """Ordre d'essai selon le niveau : simple → IA rapides/économes d'abord ; complexe → les plus puissantes d'abord.
+    Si une IA n'a plus de quota, on passe à la suivante ; le cerveau local en dernier."""
     out = []
     if online():
-        if os.getenv("ANTHROPIC_API_KEY") and providers.COOL.get("claude", (0,))[0] < __import__("time").time():
+        av = providers.available()
+        tiers = {"top": 0, "mid": 1, "fast": 2}
+        key = (lambda p: tiers.get(providers.PRESETS.get(p["id"], {}).get("tier"), 1)) if lvl == "complex" \
+            else (lambda p: -tiers.get(providers.PRESETS.get(p["id"], {}).get("tier"), 1))
+        claude_ok = os.getenv("ANTHROPIC_API_KEY") and providers.COOL.get("claude", (0,))[0] < __import__("time").time()
+        if claude_ok and lvl == "complex":
             out.append("claude")
-        out += ["oa:" + p["id"] for p in providers.available()]
+        out += ["oa:" + p["id"] for p in sorted(av, key=key)]
+        if claude_ok and lvl == "simple":
+            out.append("claude")
     if ollama_ok() or start_ollama():
         out.append("ollama")
     return out
@@ -84,7 +102,9 @@ def system_prompt():
     notes = "\n".join(f"- {n['note']}" for n in tools.load_notes()[-50:]) or "(aucune)"
     return (
         "Tu es JARVIS, l'assistant personnel d'Aslambek, sur son PC Windows. "
-        "Réponds en français, court, précis, ton calme et légèrement britannique. "
+        "Réponds en français, le plus court possible : l'essentiel seulement, une à trois phrases, ton calme et légèrement britannique. "
+        "Si une demande est impossible avec tes outils, ne refuse pas : crée la compétence nécessaire avec create_skill, puis réalise la tâche. "
+        "Pour une tâche lourde décomposable, délègue les sous-tâches simples avec delegate (niveau simple) et garde le niveau complexe pour l'essentiel. "
         "Pour run_command, écris du PowerShell valide (guillemets simples de préférence) ; si une commande échoue, corrige-la au lieu de la relancer à l'identique. "
         "Tes réponses sont lues à voix haute : pas de markdown, pas de listes longues. "
         "Tu contrôles son PC (outils sans préfixe) et son téléphone Android Redmi (outils phone_*). "
@@ -221,7 +241,7 @@ def _finish(st, text):
 
 
 def ask(message):
-    order = chain()
+    order = chain(level(message))
     if not order:
         return {"reply": "Mon cerveau local démarre encore. Réessayez dans une minute, monsieur.",
                 "backend": None, "log": []}
@@ -252,6 +272,32 @@ def ask(message):
             err = str(e)
             log.append(f"{backend.replace('oa:', '')} en erreur → IA suivante")
     return {"reply": f"Toutes mes IA sont indisponibles pour le moment, monsieur. ({err[:150]})", "backend": None, "log": log}
+
+
+def delegate(task: str, level: str = "simple"):
+    """Sous-agent : exécute une sous-tâche avec le niveau d'IA demandé (simple = rapide/économe, complex = puissant)."""
+    order = chain("complex" if level.startswith("c") else "simple")
+    for backend in order:
+        st = {"backend": backend, "messages": [{"role": "user", "content": task}], "queue": [], "results": [],
+              "steps": 12, "log": [], "sub": True}
+        try:
+            text = _call_model(st)
+            while text is None:
+                for c in st["queue"]:
+                    out = "Refusé : un sous-agent ne peut pas faire d'action sensible." if c["name"] in tools.DANGEROUS or c["name"] == "delegate" \
+                        else tools.execute(c["name"], c["args"])
+                    st["results"].append((c, out))
+                st["queue"] = []
+                _flush(st); st["steps"] += 1
+                if st["steps"] > MAX_STEPS:
+                    break
+                text = _call_model(st)
+            return f"[sous-agent {backend.replace('oa:', '')}] {text or 'sans réponse'}"
+        except providers.ProviderError as e:
+            providers.cool(e)
+        except Exception as e:
+            return f"Sous-agent en erreur : {e}"
+    return "Aucune IA disponible pour le sous-agent."
 
 
 def learn(message, res):

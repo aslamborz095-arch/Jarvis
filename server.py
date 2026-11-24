@@ -124,11 +124,31 @@ def log_tail(request: Request, n: int = 80):
     return {"log": "\n".join(p.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]) if p.exists() else ""}
 
 
-@app.get("/api/tts")
-def tts(request: Request, t: str = "", x_jarvis_token: str = Header("")):
+@app.get("/api/voices")
+def voices(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
     import voice
-    f = voice.tts(t)
+    return {"voices": voice.VOICES, "current": voice.current()}
+
+
+class VoiceIn(BaseModel):
+    voice: str
+
+
+@app.post("/api/voices")
+def voice_set(v: VoiceIn, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import voice
+    if v.voice in voice.VOICES:
+        voice.set_voice(v.voice)
+    return {"current": voice.current()}
+
+
+@app.get("/api/tts")
+def tts(request: Request, t: str = "", v: str = "", x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import voice
+    f = voice.tts(t, v or None)
     if not f:
         return Response(status_code=503)
     return FileResponse(f, media_type="audio/mpeg")
@@ -219,6 +239,11 @@ def google_callback(request: Request, code: str = "", error: str = ""):
     if error or not code:
         return HTMLResponse(f"<h2>Connexion Google annulée : {error}</h2>")
     google_apps.callback(code)
+    try:
+        import memory_ext, threading
+        threading.Thread(target=memory_ext.offload, daemon=True).start()
+    except Exception:
+        pass
     return HTMLResponse("<body style='background:#010409;color:#35e0ff;font-family:sans-serif;text-align:center;padding-top:20vh'>"
                         "<h1>✔ Google connecté à Jarvis</h1><p>Vous pouvez fermer cet onglet.</p></body>")
 
@@ -340,6 +365,8 @@ if __name__ == "__main__":
     if os.getenv("AUTO_UPDATE", "true").lower() == "true":
         updater.start_background()
     brain.warmup()
+    import memory_ext
+    memory_ext.start_background()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))

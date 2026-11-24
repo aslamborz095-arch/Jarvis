@@ -3,13 +3,40 @@ import os, hashlib, asyncio, pathlib, subprocess
 
 BASE = pathlib.Path(__file__).parent
 CACHE = BASE / "data" / "tts"
-VOICE = os.getenv("JARVIS_VOICE", "fr-FR-HenriNeural")
-RATE = os.getenv("JARVIS_VOICE_RATE", "+6%")
-PITCH = os.getenv("JARVIS_VOICE_PITCH", "-6Hz")
+VOICES = {   # voix au choix dans ⚙ ; les « Multilingual » anglaises parlent français avec l'accent britannique/anglais
+    "en-GB-OllieMultilingualNeural": "Ollie — britannique, parle français (style Jarvis)",
+    "en-GB-RyanNeural": "Ryan — britannique (anglais seulement)",
+    "en-US-AndrewMultilingualNeural": "Andrew — anglais, parle français",
+    "fr-FR-RemyMultilingualNeural": "Rémy — français posé",
+    "fr-FR-HenriNeural": "Henri — français",
+}
+VOICE_FILE = BASE / "data" / "voice.txt"
+RATE = os.getenv("JARVIS_VOICE_RATE", "+4%")
+PITCH = os.getenv("JARVIS_VOICE_PITCH", "-4Hz")
 
 
-def tts(text):
-    """Renvoie le chemin d'un MP3 (mis en cache), ou None si la voix en ligne est indisponible."""
+def current():
+    try:
+        return VOICE_FILE.read_text().strip() or "en-GB-OllieMultilingualNeural"
+    except Exception:
+        return os.getenv("JARVIS_VOICE", "en-GB-OllieMultilingualNeural")
+
+
+def set_voice(v):
+    VOICE_FILE.parent.mkdir(exist_ok=True)
+    VOICE_FILE.write_text(v)
+
+
+def tts(text, voice=None):
+    """MP3 (en cache) avec la voix choisie ; si elle échoue, voix de secours. None si hors ligne."""
+    for v in dict.fromkeys([voice or current(), "en-US-AndrewMultilingualNeural", "fr-FR-HenriNeural"]):
+        f = _tts(text, v)
+        if f:
+            return f
+    return None
+
+
+def _tts(text, VOICE):
     text = (text or "").strip()[:1500]
     if not text:
         return None

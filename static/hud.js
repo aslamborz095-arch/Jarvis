@@ -354,6 +354,15 @@ function showPreset() {
 }
 $("br-id").onchange = showPreset;
 $("btn-cfg").addEventListener("click", loadBrains);
+async function loadVoices() {
+  try {
+    const r = await api("/api/voices");
+    $("vx").innerHTML = Object.entries(r.voices).map(([id, n]) => `<option value="${id}"${id === r.current ? " selected" : ""}>${n}</option>`).join("");
+  } catch {}
+}
+$("btn-cfg").addEventListener("click", loadVoices);
+$("vx").onchange = () => api("/api/voices", { method: "POST", body: JSON.stringify({ voice: $("vx").value }) }).then(() => $("vx-test").click());
+$("vx-test").onclick = () => speak("Bonsoir monsieur. Tous les systèmes sont opérationnels. Je reste à votre disposition.");
 $("br-add").onclick = async () => {
   const id = $("br-id").value, key = $("br-key").value.trim(); if (!id || !key) return;
   $("cfg-out").textContent = "Test de la clé…";

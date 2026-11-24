@@ -65,6 +65,18 @@ def recall(query: str):
             s = _score(query, e["user"] + " " + e["reply"])
             if s > 0:
                 hits.append((s, f"[{e['t']}] Lui : {e['user'][:200]} → Jarvis : {e['reply'][:250]}"))
+    try:   # mémoire externe (Google Drive)
+        import memory_ext
+        for line in memory_ext.lines():
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            s = _score(query, e["user"] + " " + e["reply"])
+            if s > 0:
+                hits.append((s - 0.1, f"[externe {e['t']}] Lui : {e['user'][:200]} → Jarvis : {e['reply'][:250]}"))
+    except Exception:
+        pass
     import tools
     for n in tools.load_notes():
         s = _score(query, n["note"])

@@ -8,7 +8,7 @@ BASE = pathlib.Path(__file__).parent
 CLIENT = BASE / "data" / "google_client.json"
 TOKEN = BASE / "data" / "google_token.json"
 REDIRECT = "http://127.0.0.1:8765/api/google/callback"
-SCOPES = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar.events"
+SCOPES = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.file"
 TZ = "Europe/Paris"
 
 
@@ -44,6 +44,7 @@ def callback(code):
         "redirect_uri": REDIRECT, "grant_type": "authorization_code"}, timeout=20)
     r.raise_for_status()
     t = r.json(); t["expires_at"] = time.time() + t.get("expires_in", 3600) - 60
+    t["scopes"] = t.get("scope", "")
     TOKEN.write_text(json.dumps(t))
 
 

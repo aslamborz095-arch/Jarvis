@@ -172,6 +172,16 @@ DANGEROUS |= google_apps.DANGEROUS | learning.DANGEROUS
 learning.load_skills()   # compétences écrites par Jarvis
 
 
+def delegate(task: str, level: str = "simple"):
+    import brain
+    return brain.delegate(task, level)
+
+
+SPECS.append(("delegate", "Confie une sous-tâche autonome à un sous-agent. level = simple (rapide, économe) ou complex (puissant, réservé aux tâches difficiles).",
+              {"type": "object", "properties": {"task": {"type": "string"}, "level": {"type": "string"}}, "required": ["task"]}))
+FUNCS["delegate"] = delegate
+
+
 def execute(name, args):
     import inspect
     try:
