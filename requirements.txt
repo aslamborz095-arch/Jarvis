@@ -8,6 +8,7 @@ psutil
 pyautogui
 ddgs
 faster-whisper
+# mot d'éveil
 openwakeword==0.4.0
 sounddevice
 numpy

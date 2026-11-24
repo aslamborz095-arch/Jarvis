@@ -23,6 +23,15 @@ def _req_hash():
     return hashlib.sha1(p.read_bytes()).hexdigest() if p.exists() else ""
 
 
+def _pip_install():
+    # pythonw.exe n'a pas de console : pip doit passer par python.exe
+    exe = sys.executable.replace("pythonw.exe", "python.exe")
+    r = subprocess.run([exe, "-m", "pip", "install", "-q", "-r", str(BASE / "requirements.txt")],
+                       capture_output=True, text=True, creationflags=0x08000000 if os.name == "nt" else 0)
+    (BASE / "data").mkdir(exist_ok=True)
+    (BASE / "data" / "pip.log").write_text((r.stdout or "") + (r.stderr or ""), encoding="utf-8")
+
+
 def check_and_apply(restart=True):
     STATE["last_check"] = time.strftime("%d/%m %H:%M")
     try:
@@ -53,7 +62,7 @@ def check_and_apply(restart=True):
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(zf.read(name))
         if _req_hash() != before:
-            subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(BASE / "requirements.txt")])
+            _pip_install()
         VERSION_FILE.parent.mkdir(exist_ok=True)
         VERSION_FILE.write_text(sha)
         STATE["status"] = f"mis à jour → {sha[:7]}"
