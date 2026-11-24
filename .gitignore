@@ -1,0 +1,8 @@
+.env
+data/
+.venv/
+*.log
+CODE-ACCES.txt
+jarvis-hidden.vbs
+__pycache__/
+static/vendor/mediapipe/hand_landmarker.task

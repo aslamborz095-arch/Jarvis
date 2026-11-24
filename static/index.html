@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#02070b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/static/manifest.json">
+<title>J.A.R.V.I.S.</title>
+<link rel="stylesheet" href="/static/hud.css">
+</head>
+<body>
+<div class="grid"></div>
+<div class="scan"></div>
+
+<header>
+  <div class="brand">J.A.R.V.I.S.</div>
+  <div id="clock">--:--</div>
+  <div class="status">
+    <span id="st-net" class="pill">RÉSEAU</span>
+    <span id="st-brain" class="pill">CERVEAU</span>
+  </div>
+</header>
+
+<aside class="gauges">
+  <div class="gauge"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.9"/><circle id="g-cpu" class="fg" cx="18" cy="18" r="15.9"/></svg><b id="v-cpu">--</b><small>CPU</small></div>
+  <div class="gauge"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.9"/><circle id="g-ram" class="fg" cx="18" cy="18" r="15.9"/></svg><b id="v-ram">--</b><small>RAM</small></div>
+  <div class="gauge"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15.9"/><circle id="g-bat" class="fg" cx="18" cy="18" r="15.9"/></svg><b id="v-bat">--</b><small>BATT</small></div>
+</aside>
+
+<main>
+  <button id="reactor" aria-label="Parler à Jarvis">
+    <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+    <div class="core"></div>
+  </button>
+  <div id="state">EN VEILLE</div>
+  <div id="date"></div>
+  <div id="ver"></div>
+</main>
+
+<section id="feed"></section>
+
+<div id="confirm" hidden>
+  <div class="cbox">
+    <div class="ctitle">AUTORISATION REQUISE</div>
+    <pre id="cbody"></pre>
+    <div class="cbtns"><button id="c-yes">AUTORISER</button><button id="c-no">REFUSER</button></div>
+  </div>
+</div>
+
+<footer>
+  <button id="btn-hands" class="tool" title="Contrôle par les mains">✋</button>
+  <form id="form"><input id="input" placeholder="Votre ordre, monsieur…" autocomplete="off"></form>
+  <button id="btn-mic" class="tool" title="Parler (ou Espace)">🎙</button>
+</footer>
+
+<video id="cam" playsinline muted hidden></video>
+<canvas id="handfx"></canvas>
+<div id="cursor" hidden></div>
+
+<div id="login" hidden>
+  <div class="cbox">
+    <div class="ctitle">IDENTIFICATION</div>
+    <input id="token" type="password" placeholder="Code d'accès">
+    <div class="cbtns"><button id="t-ok">ENTRER</button></div>
+  </div>
+</div>
+
+<script src="/static/hud.js"></script>
+<script type="module" src="/static/hands.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+anthropic
+httpx
+psutil
+pyautogui
+ddgs
+faster-whisper
