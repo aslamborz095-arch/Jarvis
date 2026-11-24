@@ -8,7 +8,11 @@ import android.service.voice.VoiceInteractionSessionService
 import android.speech.RecognitionService
 
 /** Jarvis déclaré comme assistant numérique : appui long sur le bouton d'alimentation, même téléphone verrouillé. */
-class JarvisInteractionService : VoiceInteractionService()
+class JarvisInteractionService : VoiceInteractionService() {
+    companion object { var instance: JarvisInteractionService? = null }
+    override fun onReady() { super.onReady(); instance = this }
+    override fun onShutdown() { instance = null; super.onShutdown() }
+}
 
 class JarvisSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = object : VoiceInteractionSession(this) {

@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application android:label="Jarvis" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true" android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
@@ -25,6 +28,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Écoute du mot « Jarvis » en arrière-plan (Porcupine) -->
+        <service android:name=".WakeService" android:exported="false" android:foregroundServiceType="microphone" />
 
         <!-- Assistant numérique du téléphone (appui long sur le bouton d'alimentation / geste assistant) -->
         <service android:name=".JarvisInteractionService" android:exported="true"

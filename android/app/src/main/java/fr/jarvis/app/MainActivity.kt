@@ -27,8 +27,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(true); setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA), 1)
+        val need = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
+        if (android.os.Build.VERSION.SDK_INT >= 33) need.add(Manifest.permission.POST_NOTIFICATIONS)
+        val missing = need.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1)
 
         web = WebView(this)
         setContentView(web)
@@ -57,11 +59,24 @@ class MainActivity : Activity() {
     private fun url() = prefs.getString("url", defaultUrl)!!
 
     private fun askUrl() {
-        val input = EditText(this).apply { setText(url()) }
-        AlertDialog.Builder(this).setTitle("Adresse de Jarvis").setView(input)
-            .setPositiveButton("OK") { _, _ -> prefs.edit().putString("url", input.text.toString().trim()).apply(); web.loadUrl(url()) }
+        val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(40, 20, 40, 0) }
+        val input = EditText(this).apply { setText(url()); hint = "Adresse de Jarvis" }
+        val key = EditText(this).apply { setText(WakeService.key(this@MainActivity)); hint = "Clé Picovoice (mot « Jarvis »)" }
+        val err = prefs.getString("wake_error", "")
+        box.addView(input); box.addView(key)
+        AlertDialog.Builder(this).setTitle("Réglages Jarvis").setView(box)
+            .setMessage(if (err.isNullOrBlank()) "Clé gratuite : console.picovoice.ai" else "Dernière erreur d'écoute : $err")
+            .setPositiveButton("OK") { _, _ ->
+                prefs.edit().putString("url", input.text.toString().trim()).putString("pv_key", key.text.toString().trim())
+                    .putString("wake_error", "").apply()
+                web.loadUrl(url())
+            }
             .setNegativeButton("Annuler", null).show()
     }
+
+    // Micro libre pour l'appli quand elle est ouverte ; écoute du mot « Jarvis » quand elle est en arrière-plan
+    override fun onResume() { super.onResume(); WakeService.stop(this) }
+    override fun onPause() { super.onPause(); WakeService.start(this) }
 
     private var pendingListen = false
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handle(intent); if (!pendingListen) return; pendingListen = false; startConversation() }
