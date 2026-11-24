@@ -66,7 +66,7 @@ def system_status():
     bat = psutil.sensors_battery() if hasattr(psutil, "sensors_battery") else None
     disk = psutil.disk_usage("C:\\" if IS_WIN else "/")
     return json.dumps({
-        "heure": datetime.datetime.now().strftime("%A %d %B %Y %H:%M"),
+        "heure": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
         "cpu_pct": psutil.cpu_percent(interval=0.3),
         "ram_pct": psutil.virtual_memory().percent,
         "disque_pct": disk.percent,
@@ -157,7 +157,11 @@ FUNCS.update(phone.FUNCS)
 
 
 def execute(name, args):
+    import inspect
     try:
-        return str(FUNCS[name](**(args or {})))
+        f = FUNCS[name]
+        ok = inspect.signature(f).parameters
+        args = {k: v for k, v in (args or {}).items() if k in ok}   # ignore les arguments inventés
+        return str(f(**args))
     except Exception as e:
         return f"Erreur {type(e).__name__} : {e}"
