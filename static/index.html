@@ -49,7 +49,8 @@
 <main>
   <button id="reactor" aria-label="Parler à Jarvis"><canvas id="core"></canvas></button>
   <div id="state" data-text="EN VEILLE">EN VEILLE</div>
-  <div id="hint">Touchez le réacteur ou dites « Hey Jarvis »</div>
+  <div id="say" aria-live="polite"></div>
+  <div id="hint">Touchez le réacteur · ∞ pour converser à la voix</div>
 </main>
 
 <section class="panel log">
@@ -62,6 +63,7 @@
   <button id="btn-phone" class="tool" title="Téléphone">📱</button>
   <button id="btn-cfg" class="tool" title="Réglages">⚙</button>
   <form id="form"><input id="input" placeholder="Votre ordre, monsieur…" autocomplete="off" enterkeyhint="send"></form>
+  <button id="btn-talk" class="tool" title="Conversation mains libres">∞</button>
   <button id="btn-mic" class="tool mic" title="Parler (Espace)">🎙</button>
 </footer>
 
@@ -93,7 +95,10 @@
   <div class="box">
     <div class="ptitle">VOIX</div>
     <select id="vx"></select>
-    <div class="btns"><button id="vx-test" class="ghost">ÉCOUTER</button></div>
+    <label class="muted">Grave <input id="vx-pitch" type="range" min="-30" max="5" step="1"></label>
+    <label class="muted">Lenteur / débit <input id="vx-rate" type="range" min="-25" max="15" step="1"></label>
+    <input id="vx-key" type="text" autocomplete="off" spellcheck="false" placeholder="Clé ElevenLabs pour les voix ★ (gratuit : elevenlabs.io → API Keys)">
+    <div class="btns"><button id="vx-save" class="ghost">ENREGISTRER</button><button id="vx-test">ÉCOUTER</button></div>
 
     <div class="ptitle" style="margin-top:22px">CERVEAUX EN LIGNE</div>
     <p class="muted">Jarvis essaie chaque IA dans l'ordre ; quand l'une n'a plus de crédit ou de quota, il passe à la suivante, puis au cerveau local.</p>

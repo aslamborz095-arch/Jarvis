@@ -3,23 +3,47 @@ import os, hashlib, asyncio, pathlib, subprocess
 
 BASE = pathlib.Path(__file__).parent
 CACHE = BASE / "data" / "tts"
-VOICES = {   # voix au choix dans ⚙ ; les « Multilingual » anglaises parlent français avec l'accent britannique/anglais
-    "en-GB-OllieMultilingualNeural": "Ollie — britannique, parle français (style Jarvis)",
+VOICES = {   # voix au choix dans ⚙ ; « 11: » = ElevenLabs (clé requise), les autres sont gratuites (Microsoft)
+    "11:cnq6HZP9Mrjsf97pVK6b": "★ Grant — britannique grave, chaud, résonant (ElevenLabs)",
+    "11:wNrcUqZN35sbTl2vAQU2": "★ Callum — britannique suave, velouté (ElevenLabs)",
+    "11:DlSZgkElKXmDKq713bQ6": "★ Ben — britannique profond, intense (ElevenLabs)",
+    "11:i6icHCFicH3kzHTat04x": "★ Richard — britannique majestueux (ElevenLabs)",
+    "en-GB-OllieMultilingualNeural": "Ollie — britannique, parle français (gratuit)",
     "en-GB-RyanNeural": "Ryan — britannique (anglais seulement)",
     "en-US-AndrewMultilingualNeural": "Andrew — anglais, parle français",
     "fr-FR-RemyMultilingualNeural": "Rémy — français posé",
     "fr-FR-HenriNeural": "Henri — français",
 }
 VOICE_FILE = BASE / "data" / "voice.txt"
-RATE = os.getenv("JARVIS_VOICE_RATE", "+4%")
-PITCH = os.getenv("JARVIS_VOICE_PITCH", "-4Hz")
+SET_FILE = BASE / "data" / "voice_settings.json"
+
+
+def settings():
+    import json
+    d = {"pitch": -12, "rate": -6, "eleven_key": ""}
+    try:
+        d.update(json.loads(SET_FILE.read_text()))
+    except Exception:
+        pass
+    return d
+
+
+def save_settings(**kw):
+    import json
+    d = settings(); d.update({k: v for k, v in kw.items() if v is not None})
+    SET_FILE.parent.mkdir(exist_ok=True); SET_FILE.write_text(json.dumps(d))
+
+
+def _rp():
+    s = settings()
+    return f"{int(s['rate']):+d}%", f"{int(s['pitch']):+d}Hz"
 
 
 def current():
     try:
-        return VOICE_FILE.read_text().strip() or "en-GB-OllieMultilingualNeural"
+        return VOICE_FILE.read_text().strip() or "11:cnq6HZP9Mrjsf97pVK6b"
     except Exception:
-        return os.getenv("JARVIS_VOICE", "en-GB-OllieMultilingualNeural")
+        return os.getenv("JARVIS_VOICE", "11:cnq6HZP9Mrjsf97pVK6b")
 
 
 def set_voice(v):
@@ -29,14 +53,43 @@ def set_voice(v):
 
 def tts(text, voice=None):
     """MP3 (en cache) avec la voix choisie ; si elle échoue, voix de secours. None si hors ligne."""
-    for v in dict.fromkeys([voice or current(), "en-US-AndrewMultilingualNeural", "fr-FR-HenriNeural"]):
-        f = _tts(text, v)
+    for v in dict.fromkeys([voice or current(), "en-GB-OllieMultilingualNeural", "en-US-AndrewMultilingualNeural", "fr-FR-HenriNeural"]):
+        f = _eleven(text, v[3:]) if v.startswith("11:") else _tts(text, v)
         if f:
             return f
     return None
 
 
+_eleven_off = [0]
+
+
+def _eleven(text, vid):
+    """Voix premium ElevenLabs ; si quota épuisé / pas de clé → None (voix gratuite de secours)."""
+    import time, httpx
+    key = settings().get("eleven_key")
+    text = (text or "").strip()[:1500]
+    if not key or not text or time.time() < _eleven_off[0]:
+        return None
+    CACHE.mkdir(parents=True, exist_ok=True)
+    f = CACHE / (hashlib.sha1(f"11{vid}{text}".encode()).hexdigest() + ".mp3")
+    if f.exists() and f.stat().st_size > 0:
+        return f
+    try:
+        r = httpx.post(f"https://api.elevenlabs.io/v1/text-to-speech/{vid}", params={"output_format": "mp3_44100_64"},
+                       headers={"xi-api-key": key}, timeout=60,
+                       json={"text": text, "model_id": "eleven_multilingual_v2",
+                             "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.35, "use_speaker_boost": True}})
+        if r.status_code != 200:
+            _eleven_off[0] = time.time() + (3600 if r.status_code in (401, 402, 429) else 300)
+            return None
+        f.write_bytes(r.content)
+        return f
+    except Exception:
+        return None
+
+
 def _tts(text, VOICE):
+    RATE, PITCH = _rp()
     text = (text or "").strip()[:1500]
     if not text:
         return None

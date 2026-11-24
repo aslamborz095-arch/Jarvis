@@ -86,6 +86,11 @@ body.thinking #state::before,body.thinking #state::after{content:attr(data-text)
 body.thinking #state::before{color:#ff3d5a;clip-path:inset(0 0 55% 0);animation:gl 1.2s infinite steps(2)}
 body.thinking #state::after{color:#35e0ff;clip-path:inset(55% 0 0 0);animation:gl 1.2s infinite reverse steps(2)}
 @keyframes gl{0%{transform:translate(-2px)}50%{transform:translate(2px)}100%{transform:none}}
+#say{max-width:min(720px,86vw);min-height:1.4em;margin-top:16px;text-align:center;font:600 clamp(16px,2.2vw,21px)/1.45 var(--body);letter-spacing:.03em;color:var(--ink);text-shadow:0 0 14px rgba(53,224,255,.45)}
+#say.typing::after{content:"▍";color:var(--c);animation:blink .8s infinite;margin-left:2px}
+#say .u{display:block;font-size:.75em;color:var(--mute);margin-bottom:6px;letter-spacing:.08em}
+#btn-talk.on{animation:pulse 1.4s infinite;color:#fff}
+.box label{display:flex;align-items:center;gap:10px;margin-bottom:10px}.box input[type=range]{flex:1;accent-color:#35e0ff;height:auto;margin:0}
 #hint{margin-top:8px;font-size:12px;letter-spacing:.22em;color:var(--mute)}
 
 /* ---------- Barre de commande ---------- */
@@ -132,7 +137,9 @@ footer{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;gap:10px;al
   .sys .ptitle,.spark,.pfoot{display:none}.meter{margin-bottom:9px}
   .log{left:16px;right:16px;top:auto;bottom:calc(196px + env(safe-area-inset-bottom));height:24vh;width:auto;padding:12px 14px}
   main{justify-content:flex-start;padding-top:calc(118px + env(safe-area-inset-top))}
-  #reactor{width:min(62vw,30vh)}#state{font-size:12px;margin-top:8px}#hint{display:none}
+  #reactor{width:min(64vw,32vh)}#state{font-size:12px;margin-top:8px}#hint{display:none}
+  .log{display:none}
+  #say{font-size:18px;max-height:30vh;overflow:hidden;margin-top:14px;padding:0 6px}
   footer{padding:10px 16px calc(14px + env(safe-area-inset-bottom));gap:8px}
   #btn-hands{display:none}.tool{width:46px;height:46px}#input{height:46px;font-size:16px}
 }

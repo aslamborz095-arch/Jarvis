@@ -159,6 +159,26 @@ function setState(s, label) {
   $("state").textContent = t; $("state").dataset.text = t;
 }
 
+// ---------- Écriture animée des réponses (écran d'accueil) ----------
+let typer = null;
+function typeOut(text, userText) {
+  const el = $("say"); clearInterval(typer);
+  el.innerHTML = ""; el.classList.add("typing");
+  if (userText) { const u = document.createElement("span"); u.className = "u"; u.textContent = "« " + userText + " »"; el.appendChild(u); }
+  const t = document.createTextNode(""); el.appendChild(t);
+  let i = 0;
+  typer = setInterval(() => { t.data = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typer); el.classList.remove("typing"); } }, 28);
+}
+let lastAsked = "";
+
+// ---------- Conversation mains libres ----------
+let CONV = false;
+$("btn-talk").onclick = () => {
+  CONV = !CONV; $("btn-talk").classList.toggle("on", CONV);
+  if (CONV) { typeOut("Je vous écoute, monsieur."); startListen(); } else stopListen();
+};
+function nextTurn() { if (CONV && !rec && !srec) setTimeout(() => CONV && startListen(), 350); }
+
 // ---------- Voix (sortie) : voix neuronale du serveur, secours voix du navigateur ----------
 let player = null;
 function speakBrowser(text) {
@@ -169,7 +189,7 @@ function speakBrowser(text) {
   const v = speechSynthesis.getVoices().filter((v) => v.lang.startsWith("fr"));
   u.voice = v.find((x) => /Henri|Paul|Thomas|Male|Homme|Claude/i.test(x.name)) || v[0] || null;
   u.onstart = () => setState("speaking");
-  u.onend = () => setState("");
+  u.onend = () => { setState(""); nextTurn(); };
   speechSynthesis.speak(u);
 }
 async function speak(text) {
@@ -181,7 +201,7 @@ async function speak(text) {
     if (!r.ok) throw 0;
     player = new Audio(URL.createObjectURL(await r.blob()));
     player.onplay = () => setState("speaking");
-    player.onended = () => setState("");
+    player.onended = () => { setState(""); nextTurn(); };
     await player.play();
   } catch { speakBrowser(text); }
 }
@@ -205,7 +225,8 @@ function handle(res, voice = true) {
     return;
   }
   line(res.reply || "…");
-  if (voice) speak(res.reply || ""); else setState("");
+  typeOut(res.reply || "…", lastAsked);
+  if (voice) speak(res.reply || ""); else { setState(""); nextTurn(); }
 }
 async function decide(id, approve) {
   $("confirm").hidden = true; setState("thinking", "EXÉCUTION");
@@ -214,7 +235,10 @@ async function decide(id, approve) {
 }
 async function send(text) {
   text = text.trim(); if (!text) return;
-  line(text, "user"); setState("thinking");
+  if (CONV && /^(stop|arr[eê]te|merci jarvis|c'est tout|fin de la conversation)\b/i.test(text)) {
+    CONV = false; $("btn-talk").classList.remove("on"); typeOut("Très bien, monsieur."); return speak("Très bien, monsieur.");
+  }
+  lastAsked = text; line(text, "user"); setState("thinking"); typeOut("…", text);
   try {
     if (SOLO) return handle(await soloAsk(text));
     handle(await api("/api/chat", { method: "POST", body: JSON.stringify({ message: text }) }));
@@ -235,7 +259,7 @@ function soloListen() {
   srec.onstart = () => { $("btn-mic").classList.add("on"); setState("listening"); };
   srec.onresult = (e) => send(e.results[0][0].transcript);
   srec.onerror = (e) => line("Micro : " + e.error);
-  srec.onend = () => { srec = null; $("btn-mic").classList.remove("on"); if (document.body.classList.contains("listening")) setState(""); };
+  srec.onend = () => { srec = null; $("btn-mic").classList.remove("on"); if (document.body.classList.contains("listening")) { setState(""); nextTurn(); } };
   srec.start();
 }
 async function startListen() {
@@ -266,14 +290,15 @@ async function startListen() {
       clearInterval(meter); if (window.FX) FX.level = 0; ac.close();
       stream.getTracks().forEach((t) => t.stop());
       rec = null; $("btn-mic").classList.remove("on");
-      if (peak < 0.003) { line("Le micro ne capte aucun son : vérifiez le micro sélectionné (Windows : Paramètres → Son → Entrée) et son volume."); return setState(""); }
+      if (peak < 0.003) { line("Le micro ne capte aucun son : vérifiez le micro sélectionné (Windows : Paramètres → Son → Entrée) et son volume."); CONV = false; $("btn-talk").classList.remove("on"); return setState(""); }
+      if (!spoke && CONV) { setState(""); return nextTurn(); }
       const type = chunks[0]?.type || mime || "audio/webm";
       const ext = type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm";
       const fd = new FormData(); fd.append("audio", new Blob(chunks, { type }), "voice." + ext);
       setState("thinking", "TRANSCRIPTION");
       try {
         const r = await api("/api/transcribe", { method: "POST", body: fd });
-        if (r.text) send(r.text); else { line(`Je n'ai pas compris, pouvez-vous répéter ? (niveau micro : ${Math.round(peak * 1000)})`); setState(""); }
+        if (r.text) send(r.text); else if (CONV) { setState(""); nextTurn(); } else { line(`Je n'ai pas compris, pouvez-vous répéter ? (niveau micro : ${Math.round(peak * 1000)})`); setState(""); }
       } catch { line("Reconnaissance vocale indisponible."); setState(""); }
     };
     rec.start(250); $("btn-mic").classList.add("on"); setState("listening");
@@ -358,10 +383,20 @@ async function loadVoices() {
   try {
     const r = await api("/api/voices");
     $("vx").innerHTML = Object.entries(r.voices).map(([id, n]) => `<option value="${id}"${id === r.current ? " selected" : ""}>${n}</option>`).join("");
+    $("vx-pitch").value = r.pitch; $("vx-rate").value = r.rate;
+    $("vx-key").placeholder = r.eleven ? "Clé ElevenLabs enregistrée ✔ (coller pour la remplacer)" : "Clé ElevenLabs pour les voix ★ (gratuit : elevenlabs.io → API Keys)";
   } catch {}
 }
+async function saveVoice() {
+  const body = { voice: $("vx").value, pitch: +$("vx-pitch").value, rate: +$("vx-rate").value };
+  if ($("vx-key").value.trim()) body.eleven_key = $("vx-key").value.trim();
+  await api("/api/voices", { method: "POST", body: JSON.stringify(body) });
+  $("vx-key").value = ""; loadVoices();
+}
+$("vx-save").onclick = saveVoice;
+$("vx-pitch").onchange = $("vx-rate").onchange = saveVoice;
 $("btn-cfg").addEventListener("click", loadVoices);
-$("vx").onchange = () => api("/api/voices", { method: "POST", body: JSON.stringify({ voice: $("vx").value }) }).then(() => $("vx-test").click());
+$("vx").onchange = () => saveVoice().then(() => $("vx-test").click());
 $("vx-test").onclick = () => speak("Bonsoir monsieur. Tous les systèmes sont opérationnels. Je reste à votre disposition.");
 $("br-add").onclick = async () => {
   const id = $("br-id").value, key = $("br-key").value.trim(); if (!id || !key) return;

@@ -43,7 +43,7 @@ def _rms(a):
 
 def _record(q, noise):
     """Enregistre la commande jusqu'au silence (max 12 s)."""
-    thr = max(150.0, noise * 2.2)
+    thr = max(90.0, noise * 1.8)
     frames, started, silent = [], False, 0
     t0 = time.time()
     while time.time() - t0 < 12:
@@ -116,10 +116,16 @@ def _run():
             STATE["device"] = sd.query_devices(dev, "input")["name"]
         except Exception:
             pass
-        noise = 300.0
+        noise, peaks = 300.0, []
         while True:
             c = q.get()
             r = _rms(c)
+            peaks = (peaks + [r])[-150:]                     # ~12 s d'historique
+            ref = sorted(peaks)[int(len(peaks) * 0.95)] if len(peaks) > 20 else 500
+            gain = max(1.0, min(10.0, 2500.0 / max(ref, 50.0)))   # gain automatique : micro faible amplifié
+            if gain > 1.05:
+                import numpy as np
+                c = np.clip(c.astype(np.float32) * gain, -32768, 32767).astype(np.int16)
             noise = 0.98 * noise + 0.02 * r   # bruit ambiant moyen
             STATE["level"] = round(max(STATE["level"] * 0.9, r))
             score = max(model.predict(c).values())

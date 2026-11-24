@@ -128,11 +128,15 @@ def log_tail(request: Request, n: int = 80):
 def voices(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
     import voice
-    return {"voices": voice.VOICES, "current": voice.current()}
+    st = voice.settings()
+    return {"voices": voice.VOICES, "current": voice.current(), "pitch": st["pitch"], "rate": st["rate"], "eleven": bool(st["eleven_key"])}
 
 
 class VoiceIn(BaseModel):
-    voice: str
+    voice: str = ""
+    pitch: int | None = None
+    rate: int | None = None
+    eleven_key: str | None = None
 
 
 @app.post("/api/voices")
@@ -141,7 +145,9 @@ def voice_set(v: VoiceIn, request: Request, x_jarvis_token: str = Header("")):
     import voice
     if v.voice in voice.VOICES:
         voice.set_voice(v.voice)
-    return {"current": voice.current()}
+    voice.save_settings(pitch=v.pitch, rate=v.rate, eleven_key=(v.eleven_key.strip() if v.eleven_key else None))
+    voice._eleven_off[0] = 0
+    return {"current": voice.current(), **{k: x for k, x in voice.settings().items() if k != "eleven_key"}}
 
 
 @app.get("/api/tts")
