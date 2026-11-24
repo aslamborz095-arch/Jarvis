@@ -185,6 +185,7 @@ $("btn-talk").onclick = () => {
   CONV = !CONV; $("btn-talk").classList.toggle("on", CONV);
   if (CONV) { typeOut("Je vous écoute, monsieur."); startListen(); } else stopListen();
 };
+window.jarvisAssist = () => { CONV = true; $("btn-talk").classList.add("on"); if (!rec && !srec) startListen(); };
 function nextTurn() { if (CONV && !rec && !srec) setTimeout(() => CONV && startListen(), 350); }
 
 // ---------- Voix (sortie) : voix neuronale du serveur, secours voix du navigateur ----------
@@ -261,6 +262,11 @@ $("form").onsubmit = (e) => { e.preventDefault(); send($("input").value); $("inp
 // ---------- Voix (entrée) : arrêt automatique quand vous vous taisez ----------
 let rec = null, chunks = [], meter = null, srec = null;
 function soloListen() {
+  if (window.JarvisAndroid) {             // appli Android : reconnaissance vocale native du téléphone
+    srec = { stop() {} }; $("btn-mic").classList.add("on"); setState("listening");
+    window.onAndroidSpeech = (t) => { srec = null; $("btn-mic").classList.remove("on"); if (t) send(t); else { setState(""); nextTurn(); } };
+    return JarvisAndroid.listen();
+  }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return line("Reconnaissance vocale indisponible sur ce navigateur.");
   srec = new SR(); srec.lang = "fr-FR"; srec.interimResults = false;
