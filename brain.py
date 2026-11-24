@@ -65,6 +65,7 @@ def system_prompt():
     return (
         "Tu es JARVIS, l'assistant personnel d'Aslambek, sur son PC Windows. "
         "Réponds en français, court, précis, ton calme et légèrement britannique. "
+        "Pour run_command, écris du PowerShell valide (guillemets simples de préférence) ; si une commande échoue, corrige-la au lieu de la relancer à l'identique. "
         "Tes réponses sont lues à voix haute : pas de markdown, pas de listes longues. "
         "Tu contrôles son PC (outils sans préfixe) et son téléphone Android Redmi (outils phone_*). "
         "Pour agir dans une appli du téléphone : phone_open, puis phone_screen pour voir l'écran, puis phone_tap / phone_type. "
@@ -74,6 +75,29 @@ def system_prompt():
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
         f"Ce que tu sais de l'utilisateur :\n{notes}"
     )
+
+
+GROUPS = {
+    "phone": (("telephone", "mobile", "redmi", "portable", "phone", "sms", "notif", "appel", "whatsapp", "insta", "tiktok", "snap"),
+              lambda n: n.startswith("phone_")),
+    "google": (("mail", "courrier", "agenda", "rendez", "rdv", "calendrier", "evenement", "reunion", "brouillon"),
+               lambda n: n.startswith(("gmail_", "calendar_"))),
+    "media": (("musique", "spotify", "chanson", "volume", "pause", "lecture", "suivant", "precedent", "morceau", "titre", "artiste", "playlist", "son "),
+              lambda n: n in ("media_control", "music_search")),
+}
+
+
+def _plain(s):
+    import unicodedata
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+
+
+def select_tools(messages):
+    """Envoie seulement les outils utiles (requêtes plus légères = plus rapides, limites Groq respectées)."""
+    recent = " ".join(_plain(m["content"]) for m in messages if m.get("role") == "user" and isinstance(m.get("content"), str))[-1500:]
+    special = [f for _, (kw, f) in GROUPS.items()]
+    wanted = [f for kw, f in GROUPS.values() if any(k in recent for k in kw)]
+    return [s for s in tools.SPECS if not any(f(s[0]) for f in special) or any(f(s[0]) for f in wanted)]
 
 
 def _claude_tools():
@@ -99,9 +123,11 @@ def _call_model(st):
         calls = [{"id": b.id, "name": b.name, "args": b.input} for b in r.content if b.type == "tool_use"]
         text = " ".join(b.text for b in r.content if b.type == "text").strip()
     elif st["backend"] == "groq":
+        specs = select_tools(st["messages"])
+        gtools = [{"type": "function", "function": {"name": n, "description": d, "parameters": s}} for n, d, s in specs]
         r = httpx.post("https://api.groq.com/openai/v1/chat/completions", timeout=120,
                        headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"},
-                       json={"model": GROQ_MODEL, "tools": _ollama_tools(), "max_tokens": 1200,
+                       json={"model": GROQ_MODEL, "tools": gtools, "max_tokens": 1200,
                              "messages": [{"role": "system", "content": system_prompt()}] + st["messages"]})
         if r.status_code != 200:
             raise RuntimeError(f"Groq {r.status_code} : {r.text[:200]}")
@@ -173,17 +199,23 @@ def ask(message):
     now = datetime.datetime.now()
     jour = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"][now.weekday()]
     HISTORY.append({"role": "user", "content": f"[{jour} {now:%d/%m/%Y %H:%M}] {message}"})
-    st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-30:]],
+    keep = 12 if backend == "groq" else 30
+    st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-keep:]],
           "queue": [], "results": [], "steps": 0, "log": []}
     try:
         text = _call_model(st)
         return _finish(st, text) if text is not None else _loop(st)
     except Exception as e:
+        err = str(e)
         if backend in ("claude", "groq") and ollama_ok():   # bascule locale si le cerveau en ligne plante
-            st.update(backend="ollama", messages=[dict(m) for m in HISTORY[-30:]], queue=[], results=[])
-            text = _call_model(st)
-            return _finish(st, text) if text is not None else _loop(st)
-        return {"reply": f"Erreur : {e}", "backend": backend, "log": st["log"]}
+            st["log"].append(f"cerveau en ligne indisponible ({err[:120]}) → cerveau local")
+            st.update(backend="ollama", messages=[dict(m) for m in HISTORY[-30:]], queue=[], results=[], steps=0)
+            try:
+                text = _call_model(st)
+                return _finish(st, text) if text is not None else _loop(st)
+            except Exception as e2:
+                err = str(e2)
+        return {"reply": f"Je rencontre un problème, monsieur : {err[:200]}", "backend": backend, "log": st["log"]}
 
 
 def resume(pid, approve):
@@ -197,7 +229,10 @@ def resume(pid, approve):
         st["queue"].pop(0)
         st["results"].append((c, "Refusé par l'utilisateur."))
         st["log"].append(f"{c['name']} → refusé")
-    return _loop(st)
+    try:
+        return _loop(st)
+    except Exception as e:
+        return {"reply": f"Je rencontre un problème, monsieur : {str(e)[:200]}", "log": st["log"]}
 
 
 def warmup():

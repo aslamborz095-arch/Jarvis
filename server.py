@@ -22,6 +22,13 @@ BASE = pathlib.Path(__file__).parent
 app = FastAPI(title="JARVIS")
 
 
+from fastapi.responses import JSONResponse
+@app.exception_handler(Exception)
+async def _oops(request, exc):
+    # toujours du JSON lisible pour l'interface, jamais « Internal Server Error »
+    return JSONResponse({"reply": f"Erreur interne : {str(exc)[:200]}", "log": []}, status_code=200)
+
+
 def auth(t, req: Request = None):
     """Code exigé sauf sur le PC lui-même (accès direct, pas via Tailscale)."""
     if req is not None and req.client and req.client.host in ("127.0.0.1", "::1") \
@@ -96,6 +103,13 @@ def update_now(request: Request, x_jarvis_token: str = Header("")):
     if changed:
         threading.Timer(2, updater._restart).start()
     return {"changed": changed, "status": updater.STATE["status"]}
+
+
+@app.get("/api/log")
+def log_tail(request: Request, n: int = 80):
+    auth("", request)   # PC uniquement
+    p = BASE / "jarvis.log"
+    return {"log": "\n".join(p.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]) if p.exists() else ""}
 
 
 @app.get("/api/tts")

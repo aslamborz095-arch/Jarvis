@@ -163,7 +163,14 @@ async function startListen() {
       rec = null; $("btn-mic").classList.remove("on");
     };
     rec.start(); $("btn-mic").classList.add("on"); setState("listening");
-  } catch { line("Micro inaccessible (HTTPS requis sur téléphone)."); }
+  } catch (err) {
+    const n = err && err.name;
+    line(!window.isSecureContext ? "Micro bloqué : ouvrez Jarvis en https (adresse …ts.net) sur le téléphone."
+      : n === "NotAllowedError" ? "Micro refusé : autorisez le micro pour ce site (icône 🔒 de la barre d'adresse), ou ouvrez Jarvis dans Chrome/Edge — le navigateur intégré de l'app Claude bloque le micro."
+      : n === "NotFoundError" ? "Aucun micro détecté sur cet appareil."
+      : n === "NotReadableError" ? "Micro déjà utilisé par une autre application."
+      : "Micro indisponible : " + (err && err.message || n));
+  }
 }
 function stopListen() { rec && rec.state === "recording" && rec.stop(); }
 $("btn-mic").onclick = startListen;

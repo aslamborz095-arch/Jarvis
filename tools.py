@@ -18,13 +18,16 @@ def _trunc(s, n=8000):
 
 
 def run_command(command: str):
-    if IS_WIN:
-        args = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
+    import tempfile
+    if IS_WIN:   # passe par un fichier .ps1 : plus aucun problème de guillemets
+        f = tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8-sig")
+        f.write("$ProgressPreference='SilentlyContinue'\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\n" + command); f.close()
+        args = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", f.name]
     else:
         args = ["bash", "-lc", command]
     try:
         r = subprocess.run(args, capture_output=True, text=True, timeout=180,
-                           encoding="utf-8", errors="replace")
+                           encoding="utf-8", errors="replace", creationflags=0x08000000 if IS_WIN else 0)
         return _trunc(f"code={r.returncode}\n{r.stdout}\n{r.stderr}".strip())
     except subprocess.TimeoutExpired:
         return "Erreur : délai dépassé (180 s)."
