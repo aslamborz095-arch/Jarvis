@@ -50,13 +50,57 @@ def adb(*args, timeout=40):
     return (r.stdout + r.stderr).strip()
 
 
-def device():
+SAVED = BASE / "data" / "phone.json"
+
+
+def _devices():
+    out = []
     for line in adb("devices").splitlines()[1:]:
         parts = line.split()
         if len(parts) >= 2 and parts[1] == "device":
-            return parts[0]
-    adb("mdns", "check")  # réveille la découverte automatique sur le Wi-Fi
+            out.append(parts[0])
+    return out
+
+
+def device():
+    d = _devices()
+    if d:
+        return next((x for x in d if ":" in x), d[0])   # Wi-Fi en priorité
+    try:                                                 # reconnexion à la dernière adresse connue
+        import json
+        host = json.loads(SAVED.read_text())["host"]
+        adb("connect", host, timeout=8)
+        d = _devices()
+        if d:
+            return d[0]
+    except Exception:
+        pass
     return None
+
+
+def _save(host):
+    import json
+    SAVED.parent.mkdir(exist_ok=True)
+    SAVED.write_text(json.dumps({"host": host}))
+
+
+def usb_to_wifi():
+    """Téléphone branché en USB → passe ADB en Wi-Fi (port 5555), puis on peut débrancher."""
+    usb = [d for d in _devices() if ":" not in d]
+    if not usb:
+        return "Aucun téléphone branché en USB (accepte « Autoriser le débogage USB » sur le téléphone)."
+    s = usb[0]
+    ip = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", adb("-s", s, "shell", "ip -f inet addr show wlan0"))
+    if not ip:
+        return "Le téléphone n'est pas sur le Wi-Fi."
+    adb("-s", s, "tcpip", "5555")
+    import time; time.sleep(3)
+    host = f"{ip.group(1)}:5555"
+    out = adb("connect", host, timeout=15)
+    if "connected" in out:
+        _save(host)
+        return f"Liaison Wi-Fi établie ({host}). Tu peux débrancher le câble."
+    return out
 
 
 def sh(cmd, timeout=40):
@@ -72,7 +116,10 @@ def pair(host_port, code):
 
 
 def connect(host_port):
-    return adb("connect", host_port.strip(), timeout=20)
+    out = adb("connect", host_port.strip(), timeout=20)
+    if "connected" in out:
+        _save(host_port.strip())
+    return out
 
 
 def status():

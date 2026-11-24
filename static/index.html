@@ -77,14 +77,14 @@
     <div class="ptitle">LIAISON MOBILE</div>
     <p id="ph-status" class="muted">Vérification…</p>
     <ol class="steps">
-      <li>Redmi : <b>Paramètres → À propos du téléphone</b> → touchez 7 fois <b>Version de MIUI/HyperOS</b>.</li>
-      <li><b>Paramètres supplémentaires → Options pour les développeurs</b> : activez <b>Débogage USB</b>, <b>Débogage USB (paramètres de sécurité)</b> et <b>Débogage sans fil</b>.</li>
-      <li>Touchez <b>Débogage sans fil → Associer l'appareil avec un code</b> et recopiez ci-dessous.</li>
+      <li><b>Options pour les développeurs</b> : <b>Débogage USB</b> activé (et si possible <b>Débogage USB (paramètres de sécurité)</b> pour toucher/écrire).</li>
+      <li><b>Par câble (le plus simple)</b> : branchez le téléphone au PC, acceptez « Autoriser le débogage USB », puis <b>LIAISON PAR CÂBLE</b>. Ensuite débranchez.</li>
+      <li><b>Sans câble</b> : Débogage sans fil → Associer avec un code → recopiez adresse + code, puis ASSOCIER.</li>
     </ol>
     <input id="ph-host" placeholder="Adresse IP et port (ex : 192.168.1.20:37099)" inputmode="url">
     <input id="ph-code" placeholder="Code d'association (6 chiffres)" inputmode="numeric">
     <pre id="ph-out"></pre>
-    <div class="btns"><button id="ph-close" class="ghost">FERMER</button><button id="ph-go">ASSOCIER</button></div>
+    <div class="btns"><button id="ph-close" class="ghost">FERMER</button><button id="ph-usb">LIAISON PAR CÂBLE</button><button id="ph-go">ASSOCIER</button></div>
   </div>
 </div>
 

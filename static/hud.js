@@ -162,6 +162,7 @@ document.addEventListener("keydown", (e) => {
 // ---------- Téléphone ----------
 $("btn-phone").onclick = () => { $("phone").hidden = false; pollPhone(); };
 $("ph-close").onclick = () => { $("phone").hidden = true; };
+$("ph-usb").onclick = () => { $("ph-host").value = "usb"; $("ph-code").value = ""; $("ph-go").click(); $("ph-host").value = ""; };
 $("ph-go").onclick = async () => {
   const host = $("ph-host").value.trim(), code = $("ph-code").value.trim();
   if (!host) return;

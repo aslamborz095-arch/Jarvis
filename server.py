@@ -125,7 +125,10 @@ def phone_status(request: Request, x_jarvis_token: str = Header("")):
 def phone_link(p: Pair, request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
     import phone
-    out = phone.pair(p.host, p.code) if p.code else phone.connect(p.host)
+    if p.host.lower() == "usb":
+        out = phone.usb_to_wifi()
+    else:
+        out = phone.pair(p.host, p.code) if p.code else phone.connect(p.host)
     return {"output": out, **phone.status()}
 
 
