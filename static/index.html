@@ -60,6 +60,7 @@
 <footer>
   <button id="btn-hands" class="tool" title="Contrôle par les mains">✋</button>
   <button id="btn-phone" class="tool" title="Téléphone">📱</button>
+  <button id="btn-cfg" class="tool" title="Réglages">⚙</button>
   <form id="form"><input id="input" placeholder="Votre ordre, monsieur…" autocomplete="off" enterkeyhint="send"></form>
   <button id="btn-mic" class="tool mic" title="Parler (Espace)">🎙</button>
 </footer>
@@ -85,6 +86,21 @@
     <input id="ph-code" placeholder="Code d'association (6 chiffres)" inputmode="numeric">
     <pre id="ph-out"></pre>
     <div class="btns"><button id="ph-close" class="ghost">FERMER</button><button id="ph-usb">LIAISON PAR CÂBLE</button><button id="ph-go">ASSOCIER</button></div>
+  </div>
+</div>
+
+<div id="cfg" class="modal" hidden>
+  <div class="box">
+    <div class="ptitle">CERVEAU CLAUDE</div>
+    <p id="cfg-status" class="muted">—</p>
+    <input id="cfg-key" type="text" autocomplete="off" spellcheck="false" placeholder="Collez la clé API (sk-ant-…)">
+    <select id="cfg-model">
+      <option value="claude-sonnet-5-5">Sonnet 5.5 — équilibré (recommandé)</option>
+      <option value="claude-haiku-5-5">Haiku 5.5 — le plus rapide et économique</option>
+      <option value="claude-opus-5-5">Opus 5.5 — le plus puissant</option>
+    </select>
+    <pre id="cfg-out"></pre>
+    <div class="btns"><button id="cfg-close" class="ghost">FERMER</button><button id="cfg-save">ENREGISTRER</button></div>
   </div>
 </div>
 

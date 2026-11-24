@@ -109,6 +109,37 @@ async def transcribe(request: Request, audio: UploadFile = File(...), x_jarvis_t
     return {"text": text}
 
 
+class Config(BaseModel):
+    anthropic_key: str = ""
+    claude_model: str = ""
+
+
+def _set_env(key, value):
+    p = BASE / ".env"
+    lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+    lines = [l for l in lines if not l.startswith(key + "=")] + [f"{key}={value}"]
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.environ[key] = value
+
+
+@app.post("/api/config")
+def config(c: Config, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    if c.claude_model:
+        _set_env("CLAUDE_MODEL", c.claude_model.strip())
+        brain.CLAUDE_MODEL = c.claude_model.strip()
+    if c.anthropic_key:
+        key = c.anthropic_key.strip()
+        try:
+            import anthropic
+            anthropic.Anthropic(api_key=key).messages.create(
+                model=brain.CLAUDE_MODEL, max_tokens=5, messages=[{"role": "user", "content": "ok"}])
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:300]}
+        _set_env("ANTHROPIC_API_KEY", key)
+    return {"ok": True, "has_key": bool(os.getenv("ANTHROPIC_API_KEY")), "model": brain.CLAUDE_MODEL}
+
+
 class Pair(BaseModel):
     host: str
     code: str = ""

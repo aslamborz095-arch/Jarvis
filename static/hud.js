@@ -44,7 +44,7 @@ function bar(id, v, hot = 85) {
 function chip(id, text, cls) { const c = $(id); c.textContent = text; c.className = "chip " + cls; }
 async function poll() {
   try {
-    const s = await api("/api/status");
+    const s = await api("/api/status"); lastStatus = s;
     bar("cpu", s.cpu); bar("ram", s.ram); bar("bat", s.battery, 101);
     window.FX && FX.pushCpu(s.cpu);
     chip("st-net", s.online ? "EN LIGNE" : "HORS LIGNE", s.online ? "ok" : "warn");
@@ -174,6 +174,22 @@ $("ph-go").onclick = async () => {
     $("ph-code").value = "";
     pollPhone();
   } catch (e) { $("ph-out").textContent = "Erreur : " + e.message; }
+};
+
+// ---------- Réglages : clé Claude ----------
+let lastStatus = {};
+$("btn-cfg").onclick = () => {
+  $("cfg").hidden = false; $("cfg-out").textContent = "";
+  $("cfg-status").textContent = lastStatus.claude ? "Claude est actif." : "Aucune clé Claude : Jarvis utilise le cerveau local (lent).";
+};
+$("cfg-close").onclick = () => { $("cfg").hidden = true; };
+$("cfg-save").onclick = async () => {
+  $("cfg-out").textContent = "Vérification de la clé…";
+  try {
+    const r = await api("/api/config", { method: "POST", body: JSON.stringify({ anthropic_key: $("cfg-key").value.trim(), claude_model: $("cfg-model").value }) });
+    $("cfg-out").textContent = r.ok ? (r.has_key ? "✔ Clé valide, Claude activé (" + r.model + ")." : "Modèle enregistré.") : "✖ Clé refusée : " + r.error;
+    if (r.ok) { $("cfg-key").value = ""; poll(); }
+  } catch (e) { $("cfg-out").textContent = "Erreur : " + e.message; }
 };
 
 // ---------- Conversations vocales lancées sur le PC (« Hey Jarvis ») ----------
