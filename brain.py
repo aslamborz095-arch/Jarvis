@@ -29,10 +29,26 @@ def ollama_ok():
         return False
 
 
+def start_ollama(wait=25):
+    """Lance Ollama s'il ne tourne pas (ex : juste après le démarrage du PC)."""
+    import subprocess, time, shutil
+    exe = shutil.which("ollama") or os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")
+    try:
+        subprocess.Popen([exe, "serve"], creationflags=0x08000000 if os.name == "nt" else 0,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        return False
+    for _ in range(wait):
+        time.sleep(1)
+        if ollama_ok():
+            return True
+    return False
+
+
 def pick_backend():
     if os.getenv("ANTHROPIC_API_KEY") and online():
         return "claude"
-    if ollama_ok():
+    if ollama_ok() or start_ollama():
         return "ollama"
     return None
 
@@ -123,7 +139,7 @@ def _finish(st, text):
 def ask(message):
     backend = pick_backend()
     if not backend:
-        return {"reply": "Aucun cerveau disponible : pas d'internet ni de clé Claude, et Ollama ne répond pas.",
+        return {"reply": "Mon cerveau local démarre encore. Réessayez dans une minute, monsieur.",
                 "backend": None, "log": []}
     HISTORY.append({"role": "user", "content": message})
     st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-30:]],
