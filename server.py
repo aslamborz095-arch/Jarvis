@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent / ".env")
 
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import psutil
@@ -96,6 +96,16 @@ def update_now(request: Request, x_jarvis_token: str = Header("")):
     if changed:
         threading.Timer(2, updater._restart).start()
     return {"changed": changed, "status": updater.STATE["status"]}
+
+
+@app.get("/api/tts")
+def tts(request: Request, t: str = "", x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import voice
+    f = voice.tts(t)
+    if not f:
+        return Response(status_code=503)
+    return FileResponse(f, media_type="audio/mpeg")
 
 
 @app.post("/api/transcribe")

@@ -12,3 +12,5 @@ faster-whisper
 openwakeword==0.4.0
 sounddevice
 numpy
+edge-tts
+pillow

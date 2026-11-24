@@ -84,9 +84,10 @@ function setState(s, label) {
   $("state").textContent = t; $("state").dataset.text = t;
 }
 
-// ---------- Voix (sortie) ----------
-function speak(text) {
-  if (!("speechSynthesis" in window) || !text) return setState("");
+// ---------- Voix (sortie) : voix neuronale du serveur, secours voix du navigateur ----------
+let player = null;
+function speakBrowser(text) {
+  if (!("speechSynthesis" in window)) return setState("");
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "fr-FR"; u.rate = 1.02; u.pitch = 0.85;
@@ -95,6 +96,18 @@ function speak(text) {
   u.onstart = () => setState("speaking");
   u.onend = () => setState("");
   speechSynthesis.speak(u);
+}
+async function speak(text) {
+  if (!text) return setState("");
+  window.speechSynthesis?.cancel(); player?.pause();
+  try {
+    const r = await fetch("/api/tts?t=" + encodeURIComponent(text.slice(0, 1500)), { headers: { "X-Jarvis-Token": TOKEN } });
+    if (!r.ok) throw 0;
+    player = new Audio(URL.createObjectURL(await r.blob()));
+    player.onplay = () => setState("speaking");
+    player.onended = () => setState("");
+    await player.play();
+  } catch { speakBrowser(text); }
 }
 window.speechSynthesis?.getVoices();
 
@@ -131,7 +144,7 @@ $("form").onsubmit = (e) => { e.preventDefault(); send($("input").value); $("inp
 let rec = null, chunks = [], meter = null;
 async function startListen() {
   if (rec) return stopListen();
-  window.speechSynthesis?.cancel();
+  window.speechSynthesis?.cancel(); player?.pause();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const ac = new (window.AudioContext || window.webkitAudioContext)();

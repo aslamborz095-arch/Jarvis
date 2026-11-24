@@ -151,9 +151,9 @@ SPECS = [
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
 
-import phone
-SPECS += phone.SPECS
-FUNCS.update(phone.FUNCS)
+import phone, vision
+SPECS += phone.SPECS + vision.SPECS
+FUNCS.update(phone.FUNCS); FUNCS.update(vision.FUNCS)
 
 
 def execute(name, args):

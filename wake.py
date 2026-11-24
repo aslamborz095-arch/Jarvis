@@ -30,22 +30,9 @@ def beep(freq=880, ms=120):
         pass
 
 
-PS_SAY = r"""
-Add-Type -AssemblyName System.Speech
-$s = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'fr*' } |
-     Sort-Object { if ($_.VoiceInfo.Gender -eq 'Male') { 0 } else { 1 } } | Select-Object -First 1
-if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }
-$s.Speak($env:JARVIS_SAY)
-"""
-
-
 def speak(text):
-    if not text or os.name != "nt":
-        return
-    env = {**os.environ, "JARVIS_SAY": text[:1500]}
-    subprocess.run(["powershell", "-NoProfile", "-Command", PS_SAY], env=env,
-                   creationflags=0x08000000, timeout=120)
+    import voice
+    voice.speak_local(text)
 
 
 def _rms(a):
