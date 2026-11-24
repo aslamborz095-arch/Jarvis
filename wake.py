@@ -77,7 +77,10 @@ def _handle(q, noise):
         path = os.path.join(tempfile.gettempdir(), "jarvis_cmd.wav")
         with wave.open(path, "wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE)
-            w.writeframes(np.concatenate(frames).tobytes())
+            a = np.concatenate(frames).astype(np.float32)
+            pk = float(np.abs(a).max()) or 1.0
+            a = np.clip(a * min(29000.0 / pk, 30.0), -32768, 32767).astype(np.int16)   # volume normalisé
+            w.writeframes(a.tobytes())
         text = stt.transcribe(path)
         if not text:
             push("state", state="idle")

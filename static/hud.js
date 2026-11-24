@@ -280,7 +280,7 @@ async function startListen() {
   if (srec) return srec.stop();
   if (rec) return stopListen();
   window.speechSynthesis?.cancel(); player?.pause();
-  if (SOLO) return soloListen();
+  if (SOLO || window.JarvisAndroid?.available?.()) return soloListen();   // appli Android : reconnaissance Google native
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     const ac = new (window.AudioContext || window.webkitAudioContext)();
