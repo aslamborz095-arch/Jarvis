@@ -48,7 +48,7 @@ async function poll() {
     bar("cpu", s.cpu); bar("ram", s.ram); bar("bat", s.battery, 101);
     window.FX && FX.pushCpu(s.cpu);
     chip("st-net", s.online ? "EN LIGNE" : "HORS LIGNE", s.online ? "ok" : "warn");
-    chip("st-brain", s.claude ? "CLAUDE" : s.local ? "LOCAL" : "AUCUN CERVEAU", s.claude ? "ok" : s.local ? "warn" : "bad");
+    chip("st-brain", s.claude ? "CLAUDE" : s.groq ? "GROQ" : s.local ? "LOCAL" : "AUCUN CERVEAU", s.claude || s.groq ? "ok" : s.local ? "warn" : "bad");
     chip("st-wake", s.wake ? "HEY JARVIS" : "MICRO OFF", s.wake ? "ok" : "warn");
     $("ver").textContent = (s.version ? "VERSION " + s.version.toUpperCase() : "") + "  ·  " + (s.update || "").toUpperCase();
   } catch { chip("st-net", "SERVEUR ?", "bad"); }
@@ -180,15 +180,15 @@ $("ph-go").onclick = async () => {
 let lastStatus = {};
 $("btn-cfg").onclick = () => {
   $("cfg").hidden = false; $("cfg-out").textContent = "";
-  $("cfg-status").textContent = lastStatus.claude ? "Claude est actif." : "Aucune clé Claude : Jarvis utilise le cerveau local (lent).";
+  $("cfg-status").textContent = lastStatus.claude ? "Cerveau actif : Claude." : lastStatus.groq ? "Cerveau actif : Groq (gratuit)." : "Aucune clé : Jarvis utilise le cerveau local (lent).";
 };
 $("cfg-close").onclick = () => { $("cfg").hidden = true; };
 $("cfg-save").onclick = async () => {
   $("cfg-out").textContent = "Vérification de la clé…";
   try {
-    const r = await api("/api/config", { method: "POST", body: JSON.stringify({ anthropic_key: $("cfg-key").value.trim(), claude_model: $("cfg-model").value }) });
-    $("cfg-out").textContent = r.ok ? (r.has_key ? "✔ Clé valide, Claude activé (" + r.model + ")." : "Modèle enregistré.") : "✖ Clé refusée : " + r.error;
-    if (r.ok) { $("cfg-key").value = ""; poll(); }
+    const r = await api("/api/config", { method: "POST", body: JSON.stringify({ anthropic_key: $("cfg-key").value.trim(), groq_key: $("cfg-groq").value.trim(), claude_model: $("cfg-model").value }) });
+    $("cfg-out").textContent = r.ok ? (r.has_key ? "✔ Claude activé (" + r.model + ")." : r.has_groq ? "✔ Clé Groq valide, cerveau gratuit activé." : "Enregistré.") : "✖ Clé refusée : " + r.error;
+    if (r.ok) { $("cfg-key").value = ""; $("cfg-groq").value = ""; poll(); }
   } catch (e) { $("cfg-out").textContent = "Erreur : " + e.message; }
 };
 

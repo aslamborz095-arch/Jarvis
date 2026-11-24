@@ -69,6 +69,7 @@ def status(request: Request, x_jarvis_token: str = Header("")):
     return {
         "online": net,
         "claude": bool(os.getenv("ANTHROPIC_API_KEY")) and net,
+        "groq": bool(os.getenv("GROQ_API_KEY")) and net,
         "local": brain.ollama_ok(),
         "cpu": psutil.cpu_percent(),
         "ram": psutil.virtual_memory().percent,
@@ -111,6 +112,7 @@ async def transcribe(request: Request, audio: UploadFile = File(...), x_jarvis_t
 
 class Config(BaseModel):
     anthropic_key: str = ""
+    groq_key: str = ""
     claude_model: str = ""
 
 
@@ -137,7 +139,15 @@ def config(c: Config, request: Request, x_jarvis_token: str = Header("")):
         except Exception as e:
             return {"ok": False, "error": str(e)[:300]}
         _set_env("ANTHROPIC_API_KEY", key)
-    return {"ok": True, "has_key": bool(os.getenv("ANTHROPIC_API_KEY")), "model": brain.CLAUDE_MODEL}
+    if c.groq_key:
+        key = c.groq_key.strip()
+        import httpx
+        r = httpx.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=20)
+        if r.status_code != 200:
+            return {"ok": False, "error": f"Groq {r.status_code} : {r.text[:200]}"}
+        _set_env("GROQ_API_KEY", key)
+    return {"ok": True, "has_key": bool(os.getenv("ANTHROPIC_API_KEY")), "has_groq": bool(os.getenv("GROQ_API_KEY")),
+            "model": brain.CLAUDE_MODEL}
 
 
 class Pair(BaseModel):

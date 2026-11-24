@@ -47,9 +47,14 @@ def start_ollama(wait=25):
     return False
 
 
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+
 def pick_backend():
     if os.getenv("ANTHROPIC_API_KEY") and online():
         return "claude"
+    if os.getenv("GROQ_API_KEY") and online():
+        return "groq"
     if ollama_ok() or start_ollama():
         return "ollama"
     return None
@@ -91,6 +96,19 @@ def _call_model(st):
         st["messages"].append({"role": "assistant", "content": [b.model_dump(exclude_none=True) for b in r.content]})
         calls = [{"id": b.id, "name": b.name, "args": b.input} for b in r.content if b.type == "tool_use"]
         text = " ".join(b.text for b in r.content if b.type == "text").strip()
+    elif st["backend"] == "groq":
+        r = httpx.post("https://api.groq.com/openai/v1/chat/completions", timeout=120,
+                       headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"},
+                       json={"model": GROQ_MODEL, "tools": _ollama_tools(), "max_tokens": 1200,
+                             "messages": [{"role": "system", "content": system_prompt()}] + st["messages"]})
+        if r.status_code != 200:
+            raise RuntimeError(f"Groq {r.status_code} : {r.text[:200]}")
+        msg = r.json()["choices"][0]["message"]
+        msg = {k: v for k, v in msg.items() if k in ("role", "content", "tool_calls")}
+        st["messages"].append(msg)
+        calls = [{"id": c["id"], "name": c["function"]["name"],
+                  "args": json.loads(c["function"].get("arguments") or "{}")} for c in msg.get("tool_calls") or []]
+        text = (msg.get("content") or "").strip()
     else:
         r = httpx.post(f"{OLLAMA_URL}/api/chat", timeout=600, json={
             "model": OLLAMA_MODEL, "stream": False, "tools": _ollama_tools(), **OLLAMA_OPTS,
@@ -108,6 +126,9 @@ def _flush(st):
     if st["backend"] == "claude":
         st["messages"].append({"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": c["id"], "content": out} for c, out in st["results"]]})
+    elif st["backend"] == "groq":
+        for c, out in st["results"]:
+            st["messages"].append({"role": "tool", "tool_call_id": c["id"], "content": out[:6000]})
     else:
         for c, out in st["results"]:
             st["messages"].append({"role": "tool", "content": out, "tool_name": c["name"]})
@@ -156,7 +177,7 @@ def ask(message):
         text = _call_model(st)
         return _finish(st, text) if text is not None else _loop(st)
     except Exception as e:
-        if backend == "claude" and ollama_ok():   # bascule locale si Claude plante
+        if backend in ("claude", "groq") and ollama_ok():   # bascule locale si le cerveau en ligne plante
             st.update(backend="ollama", messages=[dict(m) for m in HISTORY[-30:]], queue=[], results=[])
             text = _call_model(st)
             return _finish(st, text) if text is not None else _loop(st)
