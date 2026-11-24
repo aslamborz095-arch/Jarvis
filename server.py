@@ -15,12 +15,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import psutil
 
-import brain, tools, updater
+import brain, tools, updater, stt, wake
 
 TOKEN = os.getenv("JARVIS_TOKEN", "")
 BASE = pathlib.Path(__file__).parent
 app = FastAPI(title="JARVIS")
-_whisper = None
 
 
 def auth(t, req: Request = None):
@@ -77,7 +76,15 @@ def status(request: Request, x_jarvis_token: str = Header("")):
         "plugged": bat.power_plugged if bat else None,
         "version": (updater.current() or "")[:7],
         "update": updater.STATE["status"],
+        "wake": wake.STATE["enabled"],
+        "wake_error": wake.STATE["error"],
     }
+
+
+@app.get("/api/events")
+def events(request: Request, after: int = 0, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    return {"events": wake.events_after(after), "last": wake._counter[0]}
 
 
 @app.post("/api/update")
@@ -94,15 +101,12 @@ def update_now(request: Request, x_jarvis_token: str = Header("")):
 async def transcribe(request: Request, audio: UploadFile = File(...), x_jarvis_token: str = Header("")):
     """Reconnaissance vocale locale (fonctionne hors ligne)."""
     auth(x_jarvis_token, request)
-    global _whisper
-    if _whisper is None:
-        from faster_whisper import WhisperModel
-        _whisper = WhisperModel(os.getenv("WHISPER_MODEL", "small"), device="auto", compute_type="int8")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as f:
         f.write(await audio.read())
-    segs, _ = _whisper.transcribe(f.name, language="fr", vad_filter=True)
+    import asyncio
+    text = await asyncio.to_thread(stt.transcribe, f.name)
     os.unlink(f.name)
-    return {"text": " ".join(s.text for s in segs).strip()}
+    return {"text": text}
 
 
 @app.post("/api/pointer")
@@ -124,4 +128,6 @@ if __name__ == "__main__":
     import uvicorn
     if os.getenv("AUTO_UPDATE", "true").lower() == "true":
         updater.start_background()
+    if os.getenv("WAKE_WORD", "true").lower() == "true":
+        wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))

@@ -41,6 +41,10 @@ async function poll() {
     net.className = "pill " + (s.online ? "ok" : "warn");
     br.textContent = s.claude ? "CLAUDE" : s.local ? "LOCAL" : "AUCUN CERVEAU";
     br.className = "pill " + (s.claude ? "ok" : s.local ? "warn" : "bad");
+    const w = $("st-wake");
+    w.textContent = s.wake ? "HEY JARVIS" : "MICRO OFF";
+    w.className = "pill " + (s.wake ? "ok" : "warn");
+    w.title = s.wake_error || "Dites « Hey Jarvis »";
     $("ver").textContent = s.version ? "v." + s.version : "";
   } catch {
     $("st-net").textContent = "SERVEUR ?"; $("st-net").className = "pill bad";
@@ -76,7 +80,7 @@ function speak(text) {
 speechSynthesis?.getVoices();
 
 // ---------- Ordres ----------
-function handle(res) {
+function handle(res, voice = true) {
   (res.log || []).forEach((l) => line("› " + l, "log"));
   if (res.confirm) {
     const c = res.confirm;
@@ -84,11 +88,11 @@ function handle(res) {
     $("confirm").hidden = false;
     $("c-yes").onclick = () => decide(c.id, true);
     $("c-no").onclick = () => decide(c.id, false);
-    speak("J'ai besoin de votre autorisation.");
+    if (voice) speak("J'ai besoin de votre autorisation.");
     return;
   }
   line(res.reply || "…");
-  speak(res.reply || "");
+  if (voice) speak(res.reply || "");
 }
 async function decide(id, approve) {
   $("confirm").hidden = true;
@@ -132,5 +136,22 @@ $("reactor").onclick = startListen;
 document.addEventListener("keydown", (e) => {
   if (e.code === "Space" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || "") && !e.repeat) { e.preventDefault(); startListen(); }
 });
+
+// ---------- Mot d'éveil : conversations vocales lancées sur le PC ----------
+let lastEvt = -1;
+const STATES = { listening: ["listening", "J'ÉCOUTE"], thinking: ["thinking", "ANALYSE"], speaking: ["speaking", "RÉPONSE"], idle: ["", "EN VEILLE"] };
+async function pollEvents() {
+  try {
+    const r = await api("/api/events?after=" + Math.max(lastEvt, 0));
+    if (lastEvt < 0) { lastEvt = r.last; return; }   // ignore l'historique au chargement
+    for (const e of r.events) {
+      lastEvt = e.id;
+      if (e.type === "state") setState(...(STATES[e.state] || STATES.idle));
+      if (e.type === "user") line(e.text, "user");
+      if (e.type === "reply" || e.type === "confirm") handle(e.res, false);
+    }
+  } catch {}
+}
+setInterval(pollEvents, 1500); pollEvents();
 
 window.jarvis = { send, line, api, speak };

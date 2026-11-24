@@ -45,3 +45,6 @@ Ajoute une fonction dans `tools.py` + une ligne dans `SPECS`. Jarvis l'utilise i
 
 ## Mises à jour automatiques
 Jarvis vérifie le dépôt GitHub `aslamborz095-arch/jarvis` au démarrage puis toutes les 6 h. Nouvelle version → téléchargée, installée, redémarrage automatique. Tes réglages (`.env`), ta mémoire (`data/`) et l'environnement Python ne sont jamais touchés. Version affichée sous la date dans l'interface. Désactivable : `AUTO_UPDATE=false` dans `.env`.
+
+## Mot d'éveil « Hey Jarvis »
+Sur le PC, Jarvis écoute en permanence le micro (100 % local, rien n'est envoyé). Dis **« Hey Jarvis »** → bip → donne ton ordre → il répond à voix haute. Les échanges s'affichent aussi dans l'interface (PC et téléphone). Voyant **HEY JARVIS** vert = actif. Sensibilité : `WAKE_THRESHOLD` dans `.env` (plus bas = plus sensible). Désactiver : `WAKE_WORD=false`.
