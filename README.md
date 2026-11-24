@@ -54,3 +54,7 @@ Jarvis pilote le téléphone par ADB sans fil : ouvrir des applis, lire l'écran
 
 ## Vitesse
 Le modèle local reste chargé en mémoire et les consignes + outils sont mis en cache (préchauffage au démarrage) : seules les nouvelles phrases sont traitées. Avec une clé Claude, le cache de prompt est aussi activé.
+
+## Gmail, Agenda, musique
+- **Google** : bouton ⚙ → coller le fichier OAuth (client « Application de bureau » créé dans Google Cloud) → CONNECTER GOOGLE (sur le PC). Jarvis lit/cherche les mails, crée des brouillons, envoie (avec validation), gère l'agenda.
+- **Musique** : lecture/pause/suivant/volume et recherche Spotify, sur le PC ou le téléphone.

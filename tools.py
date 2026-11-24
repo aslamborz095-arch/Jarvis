@@ -151,9 +151,11 @@ SPECS = [
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
 
-import phone, vision
-SPECS += phone.SPECS + vision.SPECS
-FUNCS.update(phone.FUNCS); FUNCS.update(vision.FUNCS)
+import phone, vision, google_apps, media
+SPECS += phone.SPECS + vision.SPECS + google_apps.SPECS + media.SPECS
+for m in (phone, vision, google_apps, media):
+    FUNCS.update(m.FUNCS)
+DANGEROUS |= google_apps.DANGEROUS
 
 
 def execute(name, args):

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv(pathlib.Path(__file__).parent / ".env")
 
 from fastapi import FastAPI, Header, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import psutil
@@ -158,6 +158,46 @@ def config(c: Config, request: Request, x_jarvis_token: str = Header("")):
         _set_env("GROQ_API_KEY", key)
     return {"ok": True, "has_key": bool(os.getenv("ANTHROPIC_API_KEY")), "has_groq": bool(os.getenv("GROQ_API_KEY")),
             "model": brain.CLAUDE_MODEL}
+
+
+class GClient(BaseModel):
+    json: str
+
+
+@app.get("/api/google")
+def google_status(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import google_apps
+    return google_apps.status()
+
+
+@app.post("/api/google")
+def google_client(g: GClient, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import google_apps
+    try:
+        google_apps.save_client(g.json)
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": True}
+
+
+@app.get("/api/google/auth")
+def google_auth(request: Request):
+    auth("", request)   # uniquement depuis le PC
+    import google_apps
+    return RedirectResponse(google_apps.auth_url())
+
+
+@app.get("/api/google/callback")
+def google_callback(request: Request, code: str = "", error: str = ""):
+    auth("", request)
+    import google_apps
+    if error or not code:
+        return HTMLResponse(f"<h2>Connexion Google annulée : {error}</h2>")
+    google_apps.callback(code)
+    return HTMLResponse("<body style='background:#010409;color:#35e0ff;font-family:sans-serif;text-align:center;padding-top:20vh'>"
+                        "<h1>✔ Google connecté à Jarvis</h1><p>Vous pouvez fermer cet onglet.</p></body>")
 
 
 class Pair(BaseModel):

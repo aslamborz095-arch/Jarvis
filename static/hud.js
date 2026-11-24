@@ -196,6 +196,23 @@ $("btn-cfg").onclick = () => {
   $("cfg-status").textContent = lastStatus.claude ? "Cerveau actif : Claude." : lastStatus.groq ? "Cerveau actif : Groq (gratuit)." : "Aucune clé : Jarvis utilise le cerveau local (lent).";
 };
 $("cfg-close").onclick = () => { $("cfg").hidden = true; };
+async function gStatus() {
+  try {
+    const g = await api("/api/google");
+    $("g-status").textContent = g.connected ? "✔ Google connecté (Gmail + Agenda)." : g.client ? "Fichier enregistré. Cliquez CONNECTER GOOGLE (sur le PC)." : "Pas encore configuré.";
+  } catch {}
+}
+$("btn-cfg").addEventListener("click", gStatus);
+$("g-save").onclick = async () => {
+  const r = await api("/api/google", { method: "POST", body: JSON.stringify({ json: $("g-json").value.trim() }) });
+  $("g-status").textContent = r.ok ? "✔ Fichier enregistré. Cliquez CONNECTER GOOGLE." : "✖ " + r.error;
+  if (r.ok) $("g-json").value = "";
+};
+$("g-connect").onclick = () => {
+  if (!/^(127\.0\.0\.1|localhost)$/.test(location.hostname)) { $("g-status").textContent = "La connexion Google se fait depuis le PC (http://127.0.0.1:8765)."; return; }
+  window.open("/api/google/auth", "_blank");
+  const t = setInterval(async () => { await gStatus(); if ($("g-status").textContent.startsWith("✔ Google")) clearInterval(t); }, 3000);
+};
 $("cfg-save").onclick = async () => {
   $("cfg-out").textContent = "Vérification de la clé…";
   try {

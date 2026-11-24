@@ -107,6 +107,7 @@ footer{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;gap:10px;al
 .box.warn{border-color:var(--hot);box-shadow:0 0 40px rgba(255,154,60,.25)}.box.warn .ptitle{color:var(--hot)}
 .box input{width:100%;height:46px;margin-bottom:10px;padding:0 14px;background:#020b12;border:1px solid var(--line);color:var(--ink);font:600 16px var(--body);letter-spacing:.08em;outline:0}
 .box select{width:100%;height:46px;margin-bottom:10px;padding:0 10px;background:#020b12;border:1px solid var(--line);color:var(--ink);font:600 15px var(--body)}
+.box textarea{width:100%;margin-bottom:10px;padding:10px;background:#020b12;border:1px solid var(--line);color:var(--ink);font:12px/1.4 Consolas,monospace;resize:vertical}
 .box input:focus{border-color:var(--c)}
 .box pre{white-space:pre-wrap;font:12px/1.5 Consolas,monospace;color:#bfeaf7;max-height:36vh;overflow:auto;margin-bottom:14px}
 .muted{color:var(--mute);font-size:14px;margin-bottom:12px}
