@@ -21,8 +21,16 @@ function askToken() { $("login").hidden = false; setTimeout(() => $("token").foc
 $("t-ok").onclick = () => { TOKEN = $("token").value.trim().toUpperCase(); store.set("jarvis_token", TOKEN); $("login").hidden = true; poll(); };
 $("token").onkeydown = (e) => { if (e.key === "Enter") $("t-ok").click(); };
 
+// ---------- Mode fond d'écran : ?mode=fond (toucher l'écran = parler) ----------
+const WALL = /[?&]mode=(fond|wallpaper)/.test(location.search);
+if (WALL) {
+  document.body.classList.add("wallpaper");
+  document.addEventListener("click", (e) => { if (!e.target.closest(".modal,#reactor")) { CONV = true; startListen(); } });
+}
+
 // ---------- Démarrage ----------
 (function boot() {
+  if (WALL) return document.body.classList.remove("booting");
   const lines = ["NOYAU NEURONAL", "MODULE VOCAL", "VISION & GESTES", "LIAISON MOBILE", "PROTOCOLES DE SÉCURITÉ"];
   const box = $("boot-lines");
   lines.forEach((l, i) => setTimeout(() => {

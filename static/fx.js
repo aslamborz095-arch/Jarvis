@@ -162,7 +162,7 @@
     last = t;
     const target = COLORS[FX.state] || COLORS.idle;
     for (let i = 0; i < 3; i++) col[i] += (target[i] - col[i]) * 0.08;
-    drawBg(t); drawCore(t);
+    if (!document.body.classList.contains("fx3d")) { drawBg(t); drawCore(t); }
   }
   addEventListener("resize", () => { sizeBg(); sizeCore(); drawSpark(); });
   sizeBg(); sizeCore(); requestAnimationFrame(loop);

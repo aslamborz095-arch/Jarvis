@@ -150,3 +150,20 @@ footer{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;gap:10px;al
 .brain .st.ok{color:var(--ok)}.brain .st.wait{color:var(--hot)}
 .brain button{background:none;border:1px solid var(--line);color:var(--mute);width:32px;height:32px;cursor:pointer}
 .box a{color:var(--c)}
+
+/* ---------- 3D ---------- */
+#scene{position:fixed;inset:0;width:100%!important;height:100%!important;z-index:0}
+body.fx3d #bg,body.fx3d #core{visibility:hidden}
+body.fx3d .vignette{background:radial-gradient(ellipse at 50% 45%,transparent 45%,rgba(0,0,0,.7) 100%)}
+body.fx3d .panel{background:linear-gradient(160deg,rgba(6,30,44,.42),rgba(2,10,18,.28));backdrop-filter:blur(10px) saturate(130%);-webkit-backdrop-filter:blur(10px) saturate(130%)}
+
+/* ---------- Fond d'écran (?mode=fond) ---------- */
+body.wallpaper header .chips,body.wallpaper .brand small,body.wallpaper .panel,body.wallpaper footer,body.wallpaper #hint,body.wallpaper #boot{display:none!important}
+body.wallpaper header{grid-template-columns:1fr;text-align:center;padding-top:calc(48px + env(safe-area-inset-top))}
+body.wallpaper .brand{display:none}
+body.wallpaper .clock #clock{font-size:clamp(46px,12vw,96px);font-weight:500}
+body.wallpaper .clock #sec{display:none}
+body.wallpaper main{justify-content:center;padding-top:0}
+body.wallpaper #reactor{width:min(70vw,44vh)}
+body.wallpaper #say{font-size:clamp(17px,2.4vw,22px)}
+body.wallpaper .clock{grid-column:1/-1!important;grid-row:1!important;text-align:center!important}
