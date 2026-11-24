@@ -147,7 +147,9 @@ def ask(message):
     if not backend:
         return {"reply": "Mon cerveau local démarre encore. Réessayez dans une minute, monsieur.",
                 "backend": None, "log": []}
-    HISTORY.append({"role": "user", "content": f"[{datetime.datetime.now():%A %d/%m/%Y %H:%M}] {message}"})
+    now = datetime.datetime.now()
+    jour = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"][now.weekday()]
+    HISTORY.append({"role": "user", "content": f"[{jour} {now:%d/%m/%Y %H:%M}] {message}"})
     st = {"backend": backend, "messages": [dict(m) for m in HISTORY[-30:]],
           "queue": [], "results": [], "steps": 0, "log": []}
     try:
