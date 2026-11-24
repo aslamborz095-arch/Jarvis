@@ -121,6 +121,16 @@ def mouse(x: int, y: int, click: bool = True):
     return f"Souris : ({x},{y}) clic={click}"
 
 
+def merge_notes(new):
+    """Fusionne des notes venues du téléphone (mode autonome) sans doublons."""
+    notes = load_notes()
+    known = {n["note"] for n in notes}
+    for n in new:
+        if n.get("note") and n["note"] not in known:
+            notes.append({"date": n.get("date", datetime.date.today().isoformat()), "note": n["note"]})
+    NOTES.write_text(json.dumps(notes, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def remember(note: str):
     notes = load_notes()
     notes.append({"date": datetime.date.today().isoformat(), "note": note})

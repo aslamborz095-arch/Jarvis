@@ -5,6 +5,11 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
 let TOKEN = store.get("jarvis_token");
+const LS = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+let SOLO = false;   // true = PC injoignable, le téléphone fonctionne seul
 
 async function api(path, opts = {}) {
   const json = opts.body && !(opts.body instanceof FormData);
@@ -26,6 +31,62 @@ $("token").onkeydown = (e) => { if (e.key === "Enter") $("t-ok").click(); };
   setTimeout(() => document.body.classList.remove("booting"), 2900);
 })();
 
+// ---------- Mémoire commune PC ⇄ téléphone ----------
+async function sync() {
+  const pend = LS.get("jarvis_pending", { notes: [], history: [] });
+  if (pend.notes.length || pend.history.length) {
+    await api("/api/sync", { method: "POST", body: JSON.stringify(pend) });
+    LS.set("jarvis_pending", { notes: [], history: [] });
+    line("Mémoire synchronisée avec le PC.", "log");
+  }
+  const d = await api("/api/sync");
+  LS.set("jarvis_notes", d.notes || []); LS.set("jarvis_hist", d.history || []);
+  if (d.groq_key) store.set("jarvis_groq", d.groq_key);
+}
+function setSolo(on) {
+  if (SOLO === on) return;
+  SOLO = on;
+  if (on) {
+    chip("st-net", "AUTONOME", "warn");
+    chip("st-brain", store.get("jarvis_groq") ? "GROQ DIRECT" : "AUCUN CERVEAU", store.get("jarvis_groq") ? "ok" : "bad");
+    chip("st-wake", "MICRO TEL.", "ok"); chip("st-phone", "PC HORS LIGNE", "warn");
+    line("PC injoignable : mode autonome. Ce que vous dites sera ajouté à la mémoire commune au retour du PC.", "log");
+  } else sync().catch(() => {});
+}
+async function soloAsk(text) {
+  const key = store.get("jarvis_groq");
+  if (!key) return { reply: "Mode autonome impossible : connectez-vous une fois au PC pour récupérer la clé Groq." };
+  const notes = LS.get("jarvis_notes", []), hist = LS.get("jarvis_hist", []);
+  const d = new Date(), stamp = d.toLocaleString("fr-FR", { weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const msgs = [{ role: "system", content: "Tu es JARVIS, l'assistant personnel d'Aslambek. Le PC est éteint : tu réponds depuis son téléphone, sans accès au PC. Français, court, ton calme et légèrement britannique, pas de markdown (réponse lue à voix haute). Utilise remember pour retenir une info durable.\nCe que tu sais de lui :\n" + (notes.slice(-50).map((n) => "- " + n.note).join("\n") || "(rien)") },
+    ...hist.slice(-12), { role: "user", content: `[${stamp}] ${text}` }];
+  const tools = [{ type: "function", function: { name: "remember", description: "Mémorise durablement une info sur l'utilisateur.", parameters: { type: "object", properties: { note: { type: "string" } }, required: ["note"] } } }];
+  const pend = LS.get("jarvis_pending", { notes: [], history: [] }), log = [];
+  for (let step = 0; step < 4; step++) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", { method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "openai/gpt-oss-120b", messages: msgs, tools, max_tokens: 900 }) });
+    if (!r.ok) return { reply: "Le cerveau en ligne ne répond pas (" + r.status + ")." };
+    const m = (await r.json()).choices[0].message;
+    msgs.push({ role: "assistant", content: m.content || "", ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) });
+    if (!m.tool_calls?.length) {
+      const reply = (m.content || "").trim();
+      const add = [{ role: "user", content: `[${stamp}] ${text}` }, { role: "assistant", content: reply }];
+      LS.set("jarvis_hist", [...hist, ...add].slice(-30));
+      pend.history.push(...add); LS.set("jarvis_pending", pend);
+      return { reply, log };
+    }
+    for (const c of m.tool_calls) {
+      let note = ""; try { note = JSON.parse(c.function.arguments || "{}").note || ""; } catch {}
+      if (note) { const n = { date: new Date().toISOString().slice(0, 10), note }; pend.notes.push(n); LS.set("jarvis_notes", [...notes, n]); }
+      log.push("remember → " + note);
+      msgs.push({ role: "tool", tool_call_id: c.id, content: "Mémorisé." });
+    }
+  }
+  LS.set("jarvis_pending", pend);
+  return { reply: "C'est noté, monsieur.", log };
+}
+
 // ---------- Horloge ----------
 function tick() {
   const d = new Date();
@@ -44,18 +105,19 @@ function bar(id, v, hot = 85) {
 function chip(id, text, cls) { const c = $(id); c.textContent = text; c.className = "chip " + cls; }
 async function poll() {
   try {
-    const s = await api("/api/status"); lastStatus = s;
+    const s = await api("/api/status"); lastStatus = s; setSolo(false);
     bar("cpu", s.cpu); bar("ram", s.ram); bar("bat", s.battery, 101);
     window.FX && FX.pushCpu(s.cpu);
     chip("st-net", s.online ? "EN LIGNE" : "HORS LIGNE", s.online ? "ok" : "warn");
     chip("st-brain", s.claude ? "CLAUDE" : s.groq ? "GROQ" : s.local ? "LOCAL" : "AUCUN CERVEAU", s.claude || s.groq ? "ok" : s.local ? "warn" : "bad");
     chip("st-wake", s.wake ? "HEY JARVIS" : "MICRO OFF", s.wake ? "ok" : "warn");
     $("ver").textContent = (s.version ? "VERSION " + s.version.toUpperCase() : "") + "  ·  " + (s.update || "").toUpperCase();
-  } catch { chip("st-net", "SERVEUR ?", "bad"); }
+  } catch (e) { if (e.message !== "auth") setSolo(true); }
 }
 setInterval(poll, 5000); poll();
 
 async function pollPhone() {
+  if (SOLO) return {};
   try {
     const p = await api("/api/phone");
     chip("st-phone", p.connected ? "MOBILE" : "MOBILE OFF", p.connected ? "ok" : "warn");
@@ -100,6 +162,7 @@ function speakBrowser(text) {
 async function speak(text) {
   if (!text) return setState("");
   window.speechSynthesis?.cancel(); player?.pause();
+  if (SOLO) return speakBrowser(text);
   try {
     const r = await fetch("/api/tts?t=" + encodeURIComponent(text.slice(0, 1500)), { headers: { "X-Jarvis-Token": TOKEN } });
     if (!r.ok) throw 0;
@@ -135,34 +198,67 @@ async function decide(id, approve) {
 async function send(text) {
   text = text.trim(); if (!text) return;
   line(text, "user"); setState("thinking");
-  try { handle(await api("/api/chat", { method: "POST", body: JSON.stringify({ message: text }) })); }
-  catch (e) { if (e.message !== "auth") line("Erreur : " + e.message); setState(""); }
+  try {
+    if (SOLO) return handle(await soloAsk(text));
+    handle(await api("/api/chat", { method: "POST", body: JSON.stringify({ message: text }) }));
+  } catch (e) {
+    if (e.message === "auth") return setState("");
+    if (!SOLO && e instanceof TypeError) { setSolo(true); return handle(await soloAsk(text)); }   // PC coupé en pleine demande
+    line("Erreur : " + e.message); setState("");
+  }
 }
 $("form").onsubmit = (e) => { e.preventDefault(); send($("input").value); $("input").value = ""; };
 
-// ---------- Voix (entrée) : enregistrement → Whisper local ----------
-let rec = null, chunks = [], meter = null;
+// ---------- Voix (entrée) : arrêt automatique quand vous vous taisez ----------
+let rec = null, chunks = [], meter = null, srec = null;
+function soloListen() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return line("Reconnaissance vocale indisponible sur ce navigateur.");
+  srec = new SR(); srec.lang = "fr-FR"; srec.interimResults = false;
+  srec.onstart = () => { $("btn-mic").classList.add("on"); setState("listening"); };
+  srec.onresult = (e) => send(e.results[0][0].transcript);
+  srec.onerror = (e) => line("Micro : " + e.error);
+  srec.onend = () => { srec = null; $("btn-mic").classList.remove("on"); if (document.body.classList.contains("listening")) setState(""); };
+  srec.start();
+}
 async function startListen() {
+  if (srec) return srec.stop();
   if (rec) return stopListen();
   window.speechSynthesis?.cancel(); player?.pause();
+  if (SOLO) return soloListen();
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     const ac = new (window.AudioContext || window.webkitAudioContext)();
-    const an = ac.createAnalyser(); an.fftSize = 512; ac.createMediaStreamSource(stream).connect(an);
+    const an = ac.createAnalyser(); an.fftSize = 1024; ac.createMediaStreamSource(stream).connect(an);
     const buf = new Uint8Array(an.fftSize);
-    meter = setInterval(() => { an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) s += ((v - 128) / 128) ** 2; if (window.FX) FX.level = Math.min(1, Math.sqrt(s / buf.length) * 5); }, 50);
-    rec = new MediaRecorder(stream); chunks = [];
+    let spoke = false, quiet = 0, t0 = Date.now(), noise = 0.01;
+    meter = setInterval(() => {
+      an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) s += ((v - 128) / 128) ** 2;
+      const lvl = Math.sqrt(s / buf.length);
+      if (window.FX) FX.level = Math.min(1, lvl * 6);
+      if (Date.now() - t0 < 400) { noise = Math.max(noise, lvl); return; }      // calibre le bruit de fond
+      const loud = lvl > Math.max(0.025, noise * 2.2);
+      if (loud) { spoke = true; quiet = 0; } else if (spoke) quiet += 50;
+      if ((spoke && quiet > 1300) || Date.now() - t0 > 15000 || (!spoke && Date.now() - t0 > 7000)) stopListen();
+    }, 50);
+    const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find((m) => window.MediaRecorder?.isTypeSupported?.(m)) || "";
+    rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); chunks = [];
     rec.ondataavailable = (e) => chunks.push(e.data);
     rec.onstop = async () => {
       clearInterval(meter); if (window.FX) FX.level = 0; ac.close();
       stream.getTracks().forEach((t) => t.stop());
-      const fd = new FormData(); fd.append("audio", new Blob(chunks, { type: "audio/webm" }), "voice.webm");
-      setState("thinking", "TRANSCRIPTION");
-      try { const r = await api("/api/transcribe", { method: "POST", body: fd }); r.text ? send(r.text) : setState(""); }
-      catch { line("Reconnaissance vocale indisponible."); setState(""); }
       rec = null; $("btn-mic").classList.remove("on");
+      if (!spoke) { line("Je ne vous ai pas entendu, monsieur. Vérifiez le micro sélectionné et parlez plus près."); return setState(""); }
+      const type = chunks[0]?.type || mime || "audio/webm";
+      const ext = type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm";
+      const fd = new FormData(); fd.append("audio", new Blob(chunks, { type }), "voice." + ext);
+      setState("thinking", "TRANSCRIPTION");
+      try {
+        const r = await api("/api/transcribe", { method: "POST", body: fd });
+        if (r.text) send(r.text); else { line("Je n'ai pas compris, pouvez-vous répéter ?"); setState(""); }
+      } catch { line("Reconnaissance vocale indisponible."); setState(""); }
     };
-    rec.start(); $("btn-mic").classList.add("on"); setState("listening");
+    rec.start(250); $("btn-mic").classList.add("on"); setState("listening");
   } catch (err) {
     const n = err && err.name;
     line(!window.isSecureContext ? "Micro bloqué : ouvrez Jarvis en https (adresse …ts.net) sur le téléphone."
@@ -232,6 +328,7 @@ $("cfg-save").onclick = async () => {
 // ---------- Conversations vocales lancées sur le PC (« Hey Jarvis ») ----------
 let lastEvt = -1;
 async function pollEvents() {
+  if (SOLO) return;
   try {
     const r = await api("/api/events?after=" + Math.max(lastEvt, 0));
     if (lastEvt < 0) { lastEvt = r.last; return; }
@@ -246,3 +343,6 @@ async function pollEvents() {
 setInterval(pollEvents, 1500); pollEvents();
 
 window.jarvis = { send, line, api, speak };
+
+// ---------- Appli installable + fonctionnement sans le PC ----------
+if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});

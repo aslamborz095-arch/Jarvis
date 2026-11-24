@@ -126,7 +126,8 @@ def tts(request: Request, t: str = "", x_jarvis_token: str = Header("")):
 async def transcribe(request: Request, audio: UploadFile = File(...), x_jarvis_token: str = Header("")):
     """Reconnaissance vocale locale (fonctionne hors ligne)."""
     auth(x_jarvis_token, request)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as f:
+    suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
         f.write(await audio.read())
     import asyncio
     text = await asyncio.to_thread(stt.transcribe, f.name)
@@ -212,6 +213,37 @@ def google_callback(request: Request, code: str = "", error: str = ""):
     google_apps.callback(code)
     return HTMLResponse("<body style='background:#010409;color:#35e0ff;font-family:sans-serif;text-align:center;padding-top:20vh'>"
                         "<h1>✔ Google connecté à Jarvis</h1><p>Vous pouvez fermer cet onglet.</p></body>")
+
+
+class SyncIn(BaseModel):
+    notes: list = []
+    history: list = []
+
+
+@app.get("/api/sync")
+def sync_get(request: Request, x_jarvis_token: str = Header("")):
+    """Mémoire commune : le téléphone récupère notes + conversation (+ clé Groq pour le mode autonome)."""
+    auth(x_jarvis_token, request)
+    return {"notes": tools.load_notes(), "history": brain.HISTORY[-30:], "groq_key": os.getenv("GROQ_API_KEY", "")}
+
+
+@app.post("/api/sync")
+def sync_post(d: SyncIn, request: Request, x_jarvis_token: str = Header("")):
+    """Le téléphone renvoie ce qu'il a appris et dit en mode autonome."""
+    auth(x_jarvis_token, request)
+    tools.merge_notes(d.notes)
+    for m in d.history:
+        if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str):
+            brain.HISTORY.append({"role": m["role"], "content": m["content"][:4000]})
+    del brain.HISTORY[:-60]
+    brain.save_history()
+    return {"ok": True}
+
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(BASE / "static" / "sw.js", media_type="application/javascript",
+                        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
 
 
 class Pair(BaseModel):

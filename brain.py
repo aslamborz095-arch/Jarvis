@@ -12,7 +12,20 @@ MAX_STEPS = 25
 # Modèle gardé en mémoire + contexte fixe : le début du prompt (consignes + outils) reste en cache
 OLLAMA_OPTS = {"keep_alive": -1, "options": {"num_ctx": int(os.getenv("OLLAMA_CTX", "6144")), "num_predict": 600}}
 
-HISTORY = []          # [{role, content}] texte seulement, partagé PC + téléphone
+import pathlib
+HIST_FILE = pathlib.Path(__file__).parent / "data" / "history.json"
+try:
+    HISTORY = json.loads(HIST_FILE.read_text(encoding="utf-8"))   # mémoire de conversation persistante
+except Exception:
+    HISTORY = []          # [{role, content}] texte seulement, partagé PC + téléphone
+
+
+def save_history():
+    try:
+        HIST_FILE.parent.mkdir(exist_ok=True)
+        HIST_FILE.write_text(json.dumps(HISTORY[-60:], ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
 PENDING = {}          # id -> état d'une tâche en attente de validation
 
 
@@ -187,7 +200,8 @@ def _loop(st):
 
 def _finish(st, text):
     HISTORY.append({"role": "assistant", "content": text})
-    del HISTORY[:-30]
+    del HISTORY[:-60]
+    save_history()
     return {"reply": text, "log": st["log"], "backend": st["backend"]}
 
 
