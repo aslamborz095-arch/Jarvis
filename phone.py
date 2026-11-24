@@ -88,7 +88,13 @@ def usb_to_wifi():
     """Téléphone branché en USB → passe ADB en Wi-Fi (port 5555), puis on peut débrancher."""
     usb = [d for d in _devices() if ":" not in d]
     if not usb:
-        return "Aucun téléphone branché en USB (accepte « Autoriser le débogage USB » sur le téléphone)."
+        raw = adb("devices")
+        if "unauthorized" in raw:
+            return "Le téléphone refuse : déverrouille-le et accepte « Autoriser le débogage USB » (coche Toujours autoriser), puis réessaie."
+        return ("Windows ne voit pas le téléphone en mode débogage.\n"
+                "1. Sur le téléphone, tire la barre de notifications → « Recharge via USB » → choisis « Transfert de fichiers ».\n"
+                "2. Options développeur → Révoquer les autorisations du débogage USB, puis débranche/rebranche.\n"
+                "3. Si ça ne suffit pas, il manque le pilote USB Android sur le PC.\n\n" + raw)
     s = usb[0]
     ip = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", adb("-s", s, "shell", "ip -f inet addr show wlan0"))
     if not ip:
