@@ -121,11 +121,76 @@ def start():
     threading.Thread(target=loop, daemon=True).start()
 
 
+# ---------- tâches ----------
+TASKS = BASE / "data" / "tasks.json"
+
+
+def _tl():
+    try:
+        return json.loads(TASKS.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def task_add(text: str, due: str = ""):
+    """Ajoute une tâche (due = AAAA-MM-JJ facultatif)."""
+    t = _tl(); t.append({"id": int(time.time() * 1000) % 10**9, "text": text, "due": due, "done": False})
+    TASKS.parent.mkdir(exist_ok=True); TASKS.write_text(json.dumps(t, ensure_ascii=False, indent=1), encoding="utf-8")
+    return f"Tâche ajoutée : {text}"
+
+
+def task_done(text: str):
+    """Coche la tâche qui contient ce texte."""
+    t = _tl()
+    for x in t:
+        if not x["done"] and text.lower() in x["text"].lower():
+            x["done"] = True
+            TASKS.write_text(json.dumps(t, ensure_ascii=False, indent=1), encoding="utf-8")
+            return f"Terminé : {x['text']}"
+    return "Tâche introuvable."
+
+
+def tasks_list():
+    return "\n".join(f"- {x['text']}" + (f" (pour le {x['due']})" if x['due'] else "") for x in _tl() if not x["done"]) or "Aucune tâche."
+
+
+def dashboard():
+    """Mails, agenda, tâches et rappels classés par urgence (1 = urgent, 2 = important, 3 = plus tard)."""
+    raw = {"mails": "", "agenda": "", "taches": tasks_list(), "rappels": reminders_list()}
+    try:
+        import google_apps
+        if google_apps.TOKEN.exists():
+            raw["mails"] = google_apps.gmail_search("is:unread newer_than:7d", 15)
+            raw["agenda"] = google_apps.calendar_list(7)
+    except Exception as e:
+        raw["mails"] = f"(Google indisponible : {e})"
+    items = []
+    try:
+        import learning, re as _re
+        out = learning._llm("Classe chaque élément par urgence pour Aslambek (aujourd'hui : " + datetime.datetime.now().strftime("%A %d/%m %H:%M") +
+                            "). Ignore pubs et newsletters sauf si action requise. Réponds UNIQUEMENT en JSON : "
+                            '[{"type":"mail|agenda|tache|rappel","titre":"…","detail":"… (court)","urgence":1|2|3,"pourquoi":"… (5 mots)"}]\n'
+                            + json.dumps(raw, ensure_ascii=False)[:9000], max_tokens=3000)
+        m = _re.search(r"\[.*\]", out, _re.S)
+        items = json.loads(m.group(0)) if m else []
+    except Exception:
+        pass
+    if not items:   # pas d'IA : liste brute
+        for k, v in raw.items():
+            for l in (v or "").splitlines():
+                if l.strip() and not l.startswith(("Aucun", "(")):
+                    items.append({"type": k.rstrip("s"), "titre": l.strip()[:140], "detail": "", "urgence": 2, "pourquoi": ""})
+    return {"items": sorted(items, key=lambda x: x.get("urgence", 3)), "at": datetime.datetime.now().strftime("%d/%m %H:%M")}
+
+
 S = {"type": "string"}
 SPECS = [
     ("briefing", "Point du jour : météo, agenda, mails non lus, état PC/téléphone, rappels.", {"type": "object", "properties": {}, "required": []}),
     ("remind", "Crée un rappel parlé. when = AAAA-MM-JJTHH:MM (heure de Paris) ou +30m / +2h.",
      {"type": "object", "properties": {"text": S, "when": S}, "required": ["text", "when"]}),
     ("reminders_list", "Liste les rappels à venir.", {"type": "object", "properties": {}, "required": []}),
+    ("task_add", "Ajoute une tâche à la liste (due = AAAA-MM-JJ facultatif).", {"type": "object", "properties": {"text": S, "due": S}, "required": ["text"]}),
+    ("task_done", "Coche une tâche (texte partiel).", {"type": "object", "properties": {"text": S}, "required": ["text"]}),
+    ("tasks_list", "Liste les tâches en cours.", {"type": "object", "properties": {}, "required": []}),
 ]
-FUNCS = {"briefing": briefing, "remind": remind, "reminders_list": reminders_list}
+FUNCS = {"briefing": briefing, "remind": remind, "reminders_list": reminders_list, "task_add": task_add, "task_done": task_done, "tasks_list": tasks_list}

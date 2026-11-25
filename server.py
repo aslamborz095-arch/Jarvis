@@ -127,6 +127,18 @@ def log_tail(request: Request, n: int = 80):
     return {"log": "\n".join(p.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]) if p.exists() else ""}
 
 
+@app.get("/tableau")
+def tableau_page():
+    return FileResponse(BASE / "static" / "tableau.html")
+
+
+@app.get("/api/tableau")
+def tableau(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import proactive
+    return proactive.dashboard()
+
+
 @app.get("/api/briefing")
 def briefing(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)

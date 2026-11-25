@@ -1,0 +1,38 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS — Urgences</title>
+<style>
+@font-face{font-family:Orbitron;src:url(/static/fonts/orbitron-latin-700-normal.woff2)}
+@font-face{font-family:Rajdhani;src:url(/static/fonts/rajdhani-latin-600-normal.woff2)}
+:root{--c:#35e0ff;--bg:#010409}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#06223a,var(--bg) 60%);color:#d8f6ff;font:16px Rajdhani,sans-serif;min-height:100vh;padding:18px}
+h1{font:700 22px Orbitron;letter-spacing:4px;color:var(--c);margin:0 0 4px;text-shadow:0 0 12px var(--c)}
+#at{opacity:.6;font-size:13px;margin-bottom:16px}
+.col{margin-bottom:22px}.col h2{font:700 14px Orbitron;letter-spacing:3px;margin:0 0 8px}
+.u1 h2{color:#ff5a5a}.u2 h2{color:#ffb547}.u3 h2{color:#7fd8ff}
+.card{background:rgba(53,224,255,.06);border:1px solid rgba(53,224,255,.25);border-left:4px solid var(--b);border-radius:8px;padding:10px 12px;margin-bottom:8px;backdrop-filter:blur(4px)}
+.u1 .card{--b:#ff5a5a}.u2 .card{--b:#ffb547}.u3 .card{--b:#35e0ff}
+.t{font-weight:600}.d{opacity:.75;font-size:14px}.k{float:right;font-size:11px;letter-spacing:2px;opacity:.7;text-transform:uppercase}
+button{background:none;border:1px solid var(--c);color:var(--c);font:600 13px Orbitron;letter-spacing:2px;padding:8px 14px;border-radius:6px}
+#add{display:flex;gap:8px;margin:10px 0 18px}#add input{flex:1;background:#021018;border:1px solid #1d4a5c;color:#fff;padding:8px;border-radius:6px;font:16px Rajdhani}
+@media(min-width:900px){#cols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}}
+</style></head><body>
+<h1>URGENCES</h1><div id="at">Chargement…</div>
+<form id="add"><input id="ti" placeholder="Nouvelle tâche…"><button>AJOUTER</button><button type="button" onclick="load()">↻</button></form>
+<div id="cols"><div class="col u1"><h2>URGENT</h2><div id="c1"></div></div><div class="col u2"><h2>IMPORTANT</h2><div id="c2"></div></div><div class="col u3"><h2>PLUS TARD</h2><div id="c3"></div></div></div>
+<script>
+const tok=(()=>{try{return (window.JarvisAndroid?.kvGet?.("jarvis_token"))||localStorage.getItem("jarvis_token")||""}catch{return ""}})();
+const H={"X-Jarvis-Token":tok,"Content-Type":"application/json"};
+const ICON={mail:"✉ MAIL",agenda:"◷ AGENDA",tache:"☐ TÂCHE",rappel:"⏰ RAPPEL"};
+const esc=s=>String(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+async function load(){
+  document.getElementById("at").textContent="Analyse en cours…";
+  try{const r=await fetch("/api/tableau",{headers:H});if(r.status==401)return document.getElementById("at").textContent="Ouvrez d'abord Jarvis pour entrer le code.";
+    const d=await r.json();[1,2,3].forEach(u=>document.getElementById("c"+u).innerHTML=d.items.filter(x=>(x.urgence||3)==u).map(x=>
+      `<div class="card"><span class="k">${ICON[x.type]||esc(x.type)}</span><div class="t">${esc(x.titre)}</div><div class="d">${esc(x.detail)}${x.pourquoi?" — "+esc(x.pourquoi):""}</div></div>`).join("")||'<div class="d">Rien.</div>');
+    document.getElementById("at").textContent="Mis à jour le "+d.at;
+  }catch(e){document.getElementById("at").textContent="PC injoignable."}
+}
+document.getElementById("add").onsubmit=async e=>{e.preventDefault();const t=document.getElementById("ti").value.trim();if(!t)return;
+  await fetch("/api/chat",{method:"POST",headers:H,body:JSON.stringify({message:"Ajoute la tâche : "+t})});document.getElementById("ti").value="";load()};
+load();
+</script></body></html>
