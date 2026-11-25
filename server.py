@@ -93,7 +93,14 @@ def status(request: Request, x_jarvis_token: str = Header("")):
         "wake_dead": wake.STATE.get("mic_dead"),
         "wake_probe": wake.STATE.get("probe"),
         "wake_heard": wake.STATE.get("heard"),
+        "autopilot": {k: __import__("autopilot").STATE[k] for k in ("running", "goal", "step", "last")},
     }
+
+
+@app.post("/api/autopilot/stop")
+def autopilot_stop(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    return {"reply": __import__("autopilot").screen_stop()}
 
 
 @app.get("/api/events")

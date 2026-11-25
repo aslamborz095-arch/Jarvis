@@ -115,6 +115,7 @@ def system_prompt():
         "Tu apprends en continu : recall pour chercher dans ta mémoire longue ; si une tâche revient souvent ou qu'il te manque un outil, "
         "propose puis crée une compétence avec create_skill (l'utilisateur la valide). "
         "Tu as des yeux : screen_look (écran du PC) et phone_look (écran du téléphone) quand il faut voir une image, une vidéo ou une interface. "
+        "Autonomie PC : pour toute tâche dans une interface sans outil direct (appli, site, réglages, formulaire), appelle screen_task avec le but complet ; il pilote l'écran seul jusqu'au bout. screen_stop l'arrête. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
         f"Ce que tu sais de l'utilisateur :\n{notes}"
