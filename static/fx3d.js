@@ -5,6 +5,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 const FX = window.FX || (window.FX = { state: "idle", level: 0 });
 const MOBILE = matchMedia("(max-width:820px)").matches;
@@ -17,6 +18,7 @@ try {
 } catch { throw new Error("WebGL indisponible"); }
 renderer.setPixelRatio(Math.min(devicePixelRatio, LOW ? 1 : 1.5));
 renderer.setClearColor(0x010409, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
 renderer.domElement.id = "scene";
 document.body.prepend(renderer.domElement);
 document.body.classList.add("fx3d");
@@ -29,6 +31,17 @@ camera.position.set(0, 0.4, 10);
 const accent = new THREE.Color(STATE_COL.idle);
 const mats = [];   // matériaux qui prennent la couleur de l'état
 const add = (m) => (mats.push(m), m);
+const emis = [];   // métal dont la lueur prend la couleur de l'état
+const metal = (o = {}) => { const m = new THREE.MeshStandardMaterial({ color: 0x0c1a24, metalness: 0.95, roughness: 0.28,
+  emissive: accent.clone(), emissiveIntensity: 0.5, ...o }); emis.push(m); return m; };
+
+// ---------- Lumières et reflets (relief métallique) ----------
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+scene.add(new THREE.AmbientLight(0x9fdcff, 0.12));
+const rim1 = new THREE.DirectionalLight(0x35e0ff, 1.6); rim1.position.set(-6, 4, 3); scene.add(rim1);
+const rim2 = new THREE.DirectionalLight(0x7a5cff, 0.9); rim2.position.set(6, -3, 2); scene.add(rim2);
 
 // ---------- Réacteur ----------
 const reactor = new THREE.Group();
@@ -50,13 +63,33 @@ halo.scale.setScalar(3.2); reactor.add(halo);
 const ico = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(0.85, 1)),
   add(new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0.55 })));
 reactor.add(ico);
+const coreLight = new THREE.PointLight(accent, 40, 14, 1.6); reactor.add(coreLight);
+
+// carénage blindé (relief) : anneau usiné en métal avec rainures lumineuses
+const prof = [[2.18, -0.22], [2.62, -0.22], [2.7, -0.12], [2.7, 0.12], [2.62, 0.22], [2.18, 0.22], [2.12, 0.1], [2.12, -0.1], [2.18, -0.22]]
+  .map(([x, y]) => new THREE.Vector2(x, y));
+const housing = new THREE.Mesh(new THREE.LatheGeometry(prof, LOW ? 96 : 160), metal({ emissiveIntensity: 0.08, side: THREE.DoubleSide }));
+housing.rotation.x = Math.PI / 2; reactor.add(housing);
+const plates = new THREE.Group();
+for (let i = 0; i < 24; i++) {
+  const a = (i / 24) * Math.PI * 2;
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.34, 0.5), metal({ color: 0x14242f, emissiveIntensity: i % 3 ? 0.05 : 0.9 }));
+  b.position.set(Math.cos(a) * 2.78, Math.sin(a) * 2.78, 0); b.rotation.z = a; plates.add(b);
+}
+reactor.add(plates);
+// faisceau de lumière sous le réacteur
+const beamTex = (() => { const c = document.createElement("canvas"); c.width = 4; c.height = 128; const g = c.getContext("2d");
+  const l = g.createLinearGradient(0, 0, 0, 128); l.addColorStop(0, "rgba(255,255,255,.9)"); l.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = l; g.fillRect(0, 0, 4, 128); return new THREE.CanvasTexture(c); })();
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 2.4, 5, 48, 1, true),
+  add(new THREE.MeshBasicMaterial({ color: accent, map: beamTex, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })));
+beam.position.y = -3.1; reactor.add(beam);
 
 // bobines (10 segments)
 const coils = new THREE.Group();
 for (let i = 0; i < 10; i++) {
   const a = (i / 10) * Math.PI * 2;
-  const m = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.11, 6, 12, (Math.PI * 2) / 10 - 0.12),
-    add(new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.75 })));
+  const m = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.14, 16, 24, (Math.PI * 2) / 10 - 0.12), metal({ emissiveIntensity: 0.9 }));
   m.rotation.z = a + 0.06; coils.add(m);
 }
 reactor.add(coils);
@@ -97,6 +130,44 @@ for (let k = 0; k < 3; k++) {
   sats.push(s); reactor.add(s);
 }
 
+// ---------- Panneaux holographiques en orbite ----------
+const panelTex = () => {
+  const c = document.createElement("canvas"); c.width = 256; c.height = 160; const g = c.getContext("2d");
+  g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 2; g.strokeRect(3, 3, 250, 154);
+  g.fillStyle = "rgba(255,255,255,.12)"; g.fillRect(3, 3, 250, 22);
+  g.fillStyle = "rgba(255,255,255,.85)";
+  for (let i = 0; i < 14; i++) { const h = 10 + Math.random() * 80; g.fillRect(14 + i * 16, 148 - h, 9, h); }
+  g.beginPath(); g.moveTo(10, 70);
+  for (let x = 10; x < 246; x += 8) g.lineTo(x, 50 + Math.sin(x / 17) * 14 + Math.random() * 8);
+  g.stroke();
+  return new THREE.CanvasTexture(c);
+};
+const panels = new THREE.Group();
+const NP = LOW ? 4 : 6;
+for (let i = 0; i < NP; i++) {
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.78),
+    add(new THREE.MeshBasicMaterial({ color: accent, map: panelTex(), transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })));
+  p.userData.a = (i / NP) * Math.PI * 2; p.userData.y = (i % 2 ? 0.9 : -0.7);
+  panels.add(p);
+}
+reactor.add(panels);
+
+// arcs électriques entre le cœur et les bobines (quand il parle / réfléchit)
+const zaps = [];
+for (let k = 0; k < 5; k++) {
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(10 * 3), 3));
+  const l = new THREE.Line(g, add(new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0, blending: THREE.AdditiveBlending })));
+  zaps.push(l); reactor.add(l);
+}
+function zap(l) {
+  const a = Math.random() * Math.PI * 2, p = l.geometry.attributes.position.array;
+  for (let i = 0; i < 10; i++) {
+    const r = 0.4 + (i / 9) * 0.8, j = i && i < 9 ? 0.09 : 0;
+    p[i * 3] = Math.cos(a) * r + (Math.random() - 0.5) * j; p[i * 3 + 1] = Math.sin(a) * r + (Math.random() - 0.5) * j; p[i * 3 + 2] = (Math.random() - 0.5) * j;
+  }
+  l.geometry.attributes.position.needsUpdate = true;
+}
+
 // ---------- Particules ----------
 const N = LOW ? 900 : 2200;
 const pg = new THREE.BufferGeometry(), pos = new Float32Array(N * 3), seed = new Float32Array(N);
@@ -109,6 +180,12 @@ pg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
 const dust = new THREE.Points(pg, add(new THREE.PointsMaterial({ color: accent, size: 0.035, transparent: true, opacity: 0.8,
   map: glowTex, depthWrite: false, blending: THREE.AdditiveBlending })));
 scene.add(dust);
+// poussière au premier plan (profondeur / parallaxe)
+const fg = new THREE.BufferGeometry(), fpos = new Float32Array((LOW ? 60 : 140) * 3);
+for (let i = 0; i < fpos.length; i += 3) { fpos[i] = (Math.random() - 0.5) * 14; fpos[i + 1] = (Math.random() - 0.5) * 8; fpos[i + 2] = 3 + Math.random() * 4; }
+fg.setAttribute("position", new THREE.BufferAttribute(fpos, 3));
+const near = new THREE.Points(fg, add(new THREE.PointsMaterial({ color: accent, size: 0.12, map: glowTex, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending })));
+scene.add(near);
 
 // ---------- Sol holographique ----------
 const grid = new THREE.GridHelper(80, 80, 0x35e0ff, 0x35e0ff);
@@ -159,6 +236,19 @@ function frame(now) {
 
   tmpCol.setHex(STATE_COL[st] || STATE_COL.idle); accent.lerp(tmpCol, 0.08);
   for (const m of mats) m.color.copy(accent);
+  for (const m of emis) m.emissive.copy(accent);
+  coreLight.color.copy(accent); coreLight.intensity = 24 + lvl * 18 + (st === "speaking" ? 6 : 0);
+  plates.rotation.z -= dt * 0.05 * sp; housing.rotation.z += dt * 0.02;
+  beam.material.opacity = 0.07 + lvl * 0.05;
+  panels.children.forEach((p) => {
+    const a = p.userData.a + t * 0.12 * sp;
+    p.position.set(Math.cos(a) * 3.7, p.userData.y + Math.sin(t * 0.8 + p.userData.a) * 0.12, Math.sin(a) * 3.7);
+    p.lookAt(reactor.localToWorld(new THREE.Vector3(0, p.userData.y, 0)));
+    p.material.opacity = 0.22 + 0.18 * (Math.sin(t * 2 + p.userData.a * 3) * 0.5 + 0.5) + (st === "thinking" ? 0.15 : 0);
+  });
+  const zapOn = st === "speaking" || st === "thinking" || lvl > 0.3;
+  zaps.forEach((l) => { if (zapOn && Math.random() < 0.35) zap(l); l.material.opacity += ((zapOn && Math.random() < 0.6 ? 0.9 : 0) - l.material.opacity) * 0.5; });
+  near.position.x = -px * 1.2; near.position.y = py * 0.8;
 
   arcs.rotation.z += dt * 0.6 * sp; ringA.rotation.z -= dt * 0.15;
   coils.rotation.z -= dt * 0.22 * sp; ticks.rotation.z += dt * 0.04;
@@ -167,9 +257,9 @@ function frame(now) {
   scan.material.opacity += ((st === "thinking" ? 0.95 : 0) - scan.material.opacity) * 0.1; scan.rotation.z += dt * 4;
   sats.forEach((s, k) => { const a = -t * 1.2 * sp + (k * Math.PI * 2) / 3; s.position.set(Math.cos(a) * 1.55, Math.sin(a) * 1.55, 0); });
 
-  const pulse = 1 + (st === "speaking" ? 0.1 : 0.05) * Math.sin(t * (st === "idle" ? 1.6 : 7)) + lvl * 0.25;
-  core.scale.setScalar(pulse); halo.scale.setScalar(3.2 * pulse + lvl);
-  bloom.strength = (LOW ? 0.7 : 0.85) + lvl * 0.7 + (st === "speaking" ? 0.3 : 0);
+  const pulse = 1 + (st === "speaking" ? 0.07 : 0.05) * Math.sin(t * (st === "idle" ? 1.6 : 7)) + lvl * 0.12;
+  core.scale.setScalar(pulse); halo.scale.setScalar(2.6 * pulse + lvl * 0.4);
+  bloom.strength = (LOW ? 0.7 : 0.85) + lvl * 0.3 + (st === "speaking" ? 0.1 : 0);
 
   for (let i = 0; i < BARS; i++) {
     let target = 0.06 + 0.03 * Math.sin(t * 1.4 + i * 0.4);
@@ -186,8 +276,9 @@ function frame(now) {
   dust.rotation.y += dt * 0.03 * sp;
   grid.position.z = (t * 0.8 * sp) % 1;
 
-  reactor.rotation.y += ((px * 0.5) - reactor.rotation.y) * 0.05;
-  reactor.rotation.x += ((py * 0.35) - reactor.rotation.x) * 0.05;
+  // légère inclinaison permanente qui « respire » : on voit l'épaisseur du réacteur
+  reactor.rotation.y += ((px * 0.6 + Math.sin(t * 0.23) * 0.32) - reactor.rotation.y) * 0.05;
+  reactor.rotation.x += ((py * 0.4 - 0.18 + Math.sin(t * 0.17) * 0.12) - reactor.rotation.x) * 0.05;
   camera.position.x += ((px * 0.8) - camera.position.x) * 0.03;
   camera.lookAt(0, 0, 0);
   composer.render();

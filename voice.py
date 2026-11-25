@@ -4,11 +4,12 @@ import os, hashlib, asyncio, pathlib, subprocess
 BASE = pathlib.Path(__file__).parent
 CACHE = BASE / "data" / "tts"
 VOICES = {   # voix au choix dans ⚙ ; « 11: » = ElevenLabs (clé requise), les autres sont gratuites (Microsoft)
+    "11:IKne3meq5aSn9XLyUdCD": "★ Charlie — jeune, charismatique, énergique (ElevenLabs)",
     "11:cnq6HZP9Mrjsf97pVK6b": "★ Grant — britannique grave, chaud, résonant (ElevenLabs)",
     "11:wNrcUqZN35sbTl2vAQU2": "★ Callum — britannique suave, velouté (ElevenLabs)",
     "11:DlSZgkElKXmDKq713bQ6": "★ Ben — britannique profond, intense (ElevenLabs)",
     "11:i6icHCFicH3kzHTat04x": "★ Richard — britannique majestueux (ElevenLabs)",
-    "en-GB-OllieMultilingualNeural": "Ollie — britannique, parle français (gratuit)",
+    "en-GB-OllieMultilingualNeural": "Ollie — britannique jeune et vif, parle français (gratuit, par défaut)",
     "en-GB-RyanNeural": "Ryan — britannique (anglais seulement)",
     "en-US-AndrewMultilingualNeural": "Andrew — anglais, parle français",
     "fr-FR-RemyMultilingualNeural": "Rémy — français posé",
@@ -20,9 +21,12 @@ SET_FILE = BASE / "data" / "voice_settings.json"
 
 def settings():
     import json
-    d = {"pitch": -12, "rate": -6, "eleven_key": ""}
+    d = {"pitch": -2, "rate": 14, "eleven_key": "", "v": 2}
     try:
-        d.update(json.loads(SET_FILE.read_text()))
+        old = json.loads(SET_FILE.read_text())
+        if old.get("v") != 2:                      # anciens réglages lents/graves : on repart sur la voix dynamique
+            old = {"eleven_key": old.get("eleven_key", "")}
+        d.update(old)
     except Exception:
         pass
     return d
@@ -41,9 +45,12 @@ def _rp():
 
 def current():
     try:
-        return VOICE_FILE.read_text().strip() or "11:cnq6HZP9Mrjsf97pVK6b"
+        v = VOICE_FILE.read_text().strip()
     except Exception:
-        return os.getenv("JARVIS_VOICE", "11:cnq6HZP9Mrjsf97pVK6b")
+        v = os.getenv("JARVIS_VOICE", "")
+    if v.startswith("11:") and not settings().get("eleven_key"):
+        return "en-GB-OllieMultilingualNeural"      # pas de clé ElevenLabs : voix gratuite directement (plus rapide)
+    return v or "en-GB-OllieMultilingualNeural"
 
 
 def set_voice(v):

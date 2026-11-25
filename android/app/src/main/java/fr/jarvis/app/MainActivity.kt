@@ -13,7 +13,11 @@ import android.speech.SpeechRecognizer
 import android.view.WindowManager
 import android.webkit.*
 import android.widget.EditText
+import org.json.JSONArray
 import org.json.JSONObject
+import android.speech.tts.TextToSpeech
+import java.util.Locale
+import kotlin.concurrent.thread
 
 /** Jarvis en plein écran : l'interface 3D (via Tailscale) + micro natif + accès écran verrouillé. */
 class MainActivity : Activity() {
@@ -21,6 +25,8 @@ class MainActivity : Activity() {
     private var recognizer: SpeechRecognizer? = null
     private val prefs by lazy { getSharedPreferences("jarvis", MODE_PRIVATE) }
     private val defaultUrl = "https://desktop-u3cjv20.tail877ffc.ts.net/"
+    private val LOCAL = "https://appassets.androidplatform.net/index.html"   // interface embarquée (marche sans réseau)
+    private var tts: TextToSpeech? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,18 +48,39 @@ class MainActivity : Activity() {
         web.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) { runOnUiThread { request.grant(request.resources) } }
         }
+        tts = TextToSpeech(this) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.FRANCE }
+        LocalBrain.ensure(this)
+        getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(n: android.net.Network) {
+                LocalBrain.ensure(this@MainActivity)
+                runOnUiThread { if (web.url?.contains("appassets.androidplatform.net") == true) web.loadUrl(url()) }
+            }
+        })
         web.webViewClient = object : WebViewClient() {
+            // sert l'interface embarquée dans l'appli (assets/www) : Jarvis s'ouvre même sans Wi-Fi ni données
+            override fun shouldInterceptRequest(view: WebView, req: WebResourceRequest): WebResourceResponse? {
+                if (req.url.host != "appassets.androidplatform.net") return null
+                val path = "www" + (req.url.path ?: "/index.html").let { if (it == "/") "/index.html" else it }
+                return try {
+                    val mime = when (path.substringAfterLast('.')) { "html" -> "text/html"; "js" -> "text/javascript"; "css" -> "text/css"
+                        "svg" -> "image/svg+xml"; "json" -> "application/json"; "woff2" -> "font/woff2"; "wasm" -> "application/wasm"; "png" -> "image/png"
+                        else -> "application/octet-stream" }
+                    WebResourceResponse(mime, "utf-8", assets.open(path))
+                } catch (e: Exception) { WebResourceResponse("text/plain", "utf-8", 404, "absent", null, null) }
+            }
             override fun onPageFinished(view: WebView, url: String) { if (pendingListen) { pendingListen = false; startConversation() } }
             override fun onReceivedError(view: WebView, req: WebResourceRequest, err: WebResourceError) {
-                if (req.isForMainFrame) view.loadData(
-                    "<body style='background:#010409;color:#35e0ff;font-family:sans-serif;text-align:center;padding-top:35vh'>" +
-                    "<h2>Jarvis injoignable</h2><p>Active Tailscale puis touche l'écran.</p>" +
-                    "<script>document.body.onclick=()=>location.href='${url()}'</script></body>", "text/html", "utf-8")
+                if (req.isForMainFrame && req.url.host != "appassets.androidplatform.net") view.loadUrl(LOCAL)   // PC injoignable : interface embarquée
             }
         }
         web.setOnLongClickListener { askUrl(); true }
         handle(intent)
-        web.loadUrl(url())
+        web.loadUrl(if (online()) url() else LOCAL)
+    }
+
+    private fun online(): Boolean {
+        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+        return cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
 
     private fun url() = prefs.getString("url", defaultUrl)!!
@@ -93,12 +120,40 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() { if (web.canGoBack()) web.goBack() else super.onBackPressed() }
-    override fun onDestroy() { recognizer?.destroy(); super.onDestroy() }
+    override fun onDestroy() { recognizer?.destroy(); tts?.shutdown(); super.onDestroy() }
 
     /** Reconnaissance vocale native d'Android (utilisée quand le PC est éteint). */
     inner class Bridge {
         @JavascriptInterface fun listen() = runOnUiThread { listenNative() }
         @JavascriptInterface fun available() = SpeechRecognizer.isRecognitionAvailable(this@MainActivity)
+        @JavascriptInterface fun online() = this@MainActivity.online()
+        @JavascriptInterface fun kvGet(k: String): String? = getSharedPreferences("kv", MODE_PRIVATE).getString(k, null)
+        @JavascriptInterface fun kvSet(k: String, v: String) = getSharedPreferences("kv", MODE_PRIVATE).edit().putString(k, v).apply()
+        /** Voix native du téléphone (hors ligne). */
+        @JavascriptInterface fun speak(text: String) {
+            tts?.setSpeechRate(1.12f); tts?.setPitch(0.95f)
+            tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                override fun onStart(id: String?) {}
+                override fun onDone(id: String?) = runOnUiThread { web.evaluateJavascript("window.onAndroidSpoken && window.onAndroidSpoken()", null) }
+                @Deprecated("") override fun onError(id: String?) = onDone(id)
+            })
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "j")
+        }
+        @JavascriptInterface fun stopSpeak() { tts?.stop() }
+        /** Cerveau hors ligne : état, téléchargement, question (réponse via window.onLocalReply(id, texte)). */
+        @JavascriptInterface fun brainStatus() = LocalBrain.status(this@MainActivity)
+        @JavascriptInterface fun brainDownload() = LocalBrain.ensure(this@MainActivity, true)
+        @JavascriptInterface fun localAsk(id: String, system: String, historyJson: String, user: String) {
+            thread {
+                val r = try {
+                    val h = JSONArray(historyJson); val pairs = mutableListOf<Pair<String, String>>()
+                    var i = 0
+                    while (i + 1 < h.length()) { pairs.add(h.getJSONObject(i).optString("content") to h.getJSONObject(i + 1).optString("content")); i += 2 }
+                    LocalBrain.ask(this@MainActivity, system, pairs, user)
+                } catch (e: Throwable) { "Erreur du cerveau hors ligne : ${e.message}" }
+                runOnUiThread { web.evaluateJavascript("window.onLocalReply && window.onLocalReply(${JSONObject.quote(id)}, ${JSONObject.quote(r)})", null) }
+            }
+        }
     }
 
     private fun listenNative() {
@@ -120,7 +175,8 @@ class MainActivity : Activity() {
             })
             startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR"))
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, !online()))
         }
     }
 }

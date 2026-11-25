@@ -1,7 +1,7 @@
 name: Appli Android Jarvis
 on:
   push:
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "static/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 permissions:
   contents: write
@@ -16,6 +16,11 @@ jobs:
         with: { gradle-version: "8.11.1" }
       - name: SDK Android déjà présent sur le serveur
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties && yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Interface embarquée (Jarvis sans réseau)
+        run: |
+          mkdir -p android/app/src/main/assets/www
+          cp static/index.html android/app/src/main/assets/www/index.html
+          cp -r static android/app/src/main/assets/www/static
       - name: Construire l'APK
         working-directory: android
         run: gradle assembleRelease --no-daemon

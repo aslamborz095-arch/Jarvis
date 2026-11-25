@@ -51,3 +51,22 @@ def transcribe(path):
     except Exception:
         pass
     return _local(path)
+
+
+_tiny = None
+
+
+def quick(pcm16):
+    """Transcription éclair (modèle tiny, local) d'un court extrait int16 16 kHz — pour repérer « Jarvis »."""
+    global _tiny
+    import numpy as np
+    with _lock:
+        if _tiny is None:
+            from faster_whisper import WhisperModel
+            _tiny = WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=2)
+        a = pcm16.astype(np.float32) / 32768.0
+        pk = float(np.abs(a).max()) or 1.0
+        a = a * min(0.9 / pk, 40.0)
+        segs, _ = _tiny.transcribe(a, language="fr", beam_size=1, initial_prompt="Jarvis, Hey Jarvis.",
+                                   condition_on_previous_text=False, without_timestamps=True)
+        return " ".join(s.text for s in segs).strip()

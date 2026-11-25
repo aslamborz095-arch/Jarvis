@@ -1,17 +1,22 @@
 // JARVIS — interface : démarrage, état, conversation, voix, validations, téléphone
 const $ = (id) => document.getElementById(id);
+// Appli Android : stockage natif partagé entre l'interface du PC et l'interface embarquée (hors ligne)
+const KV = window.JarvisAndroid?.kvGet ? { getItem: (k) => JarvisAndroid.kvGet(k) || (() => { try { return localStorage.getItem(k); } catch { return null; } })(), setItem: (k, v) => JarvisAndroid.kvSet(k, String(v)) } : null;
+const ST = () => KV || localStorage;
+const EMBED = location.host === "appassets.androidplatform.net";   // interface embarquée dans l'appli = pas de PC
 const store = {
-  get(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  get(k) { try { return ST().getItem(k) || ""; } catch { return ""; } },
+  set(k, v) { try { ST().setItem(k, v); } catch {} },
 };
 let TOKEN = store.get("jarvis_token");
 const LS = {
-  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  get(k, d) { try { return JSON.parse(ST().getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { ST().setItem(k, JSON.stringify(v)); } catch {} },
 };
 let SOLO = false;   // true = PC injoignable, le téléphone fonctionne seul
 
 async function api(path, opts = {}) {
+  if (EMBED) throw new TypeError("hors ligne");
   const json = opts.body && !(opts.body instanceof FormData);
   const r = await fetch(path, { ...opts, headers: { "X-Jarvis-Token": TOKEN, ...(json ? { "Content-Type": "application/json" } : {}) } });
   if (r.status === 401) { askToken(); throw new Error("auth"); }
@@ -57,14 +62,35 @@ function setSolo(on) {
   if (on) {
     chip("st-net", "AUTONOME", "warn");
     const nb = LS.get("jarvis_brains", []).length || (store.get("jarvis_groq") ? 1 : 0);
-    chip("st-brain", nb ? nb + " IA DIRECT" : "AUCUN CERVEAU", nb ? "ok" : "bad");
+    const loc = window.JarvisAndroid?.brainStatus?.() || "";
+    chip("st-brain", !netOk() && loc === "ready" ? "IA LOCALE" : nb ? nb + " IA DIRECT" : loc === "ready" ? "IA LOCALE" : "AUCUN CERVEAU", nb || loc === "ready" ? "ok" : "bad");
+    if (loc.startsWith("download")) line("Cerveau hors ligne en téléchargement : " + loc.split(":")[1] + " %.", "log");
     chip("st-wake", "MICRO TEL.", "ok"); chip("st-phone", "PC HORS LIGNE", "warn");
     line("PC injoignable : mode autonome. Ce que vous dites sera ajouté à la mémoire commune au retour du PC.", "log");
   } else sync().catch(() => {});
 }
+function netOk() { return window.JarvisAndroid?.online ? JarvisAndroid.online() : navigator.onLine; }
+// Cerveau embarqué dans le téléphone (sans réseau)
+let localSeq = 0;
+function localAsk(text, notes, hist) {
+  if (!window.JarvisAndroid?.localAsk) return Promise.resolve({ reply: "Aucune connexion et pas de cerveau embarqué sur cet appareil, monsieur." });
+  return new Promise((ok) => {
+    const id = "q" + ++localSeq;
+    const prev = window.onLocalReply;
+    window.onLocalReply = (rid, r) => { if (rid !== id) return prev?.(rid, r); window.onLocalReply = prev;
+      const add = [{ role: "user", content: text }, { role: "assistant", content: r }];
+      LS.set("jarvis_hist", [...hist, ...add].slice(-30));
+      const pend = LS.get("jarvis_pending", { notes: [], history: [] }); pend.history.push(...add); LS.set("jarvis_pending", pend);
+      ok({ reply: r, log: ["cerveau hors ligne (téléphone)"] }); };
+    JarvisAndroid.localAsk(id, "Tu es JARVIS, l'assistant personnel d'Aslambek, en mode hors ligne sur son téléphone. Réponds en français, en 1 à 3 phrases, ton vif et légèrement britannique, sans markdown.\nCe que tu sais de lui :\n" +
+      (notes.slice(-25).map((n) => "- " + n.note).join("\n") || "(rien)"), JSON.stringify(hist.slice(-8)), text);
+  });
+}
 async function soloAsk(text) {
+  if (!netOk()) return localAsk(text, LS.get("jarvis_notes", []), LS.get("jarvis_hist", []));
   const brains = LS.get("jarvis_brains", []);
   if (!brains.length && store.get("jarvis_groq")) brains.push({ id: "groq", base: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", key: store.get("jarvis_groq") });
+  if (!brains.length && window.JarvisAndroid?.brainStatus?.() === "ready") return localAsk(text, LS.get("jarvis_notes", []), LS.get("jarvis_hist", []));
   if (!brains.length) return { reply: "Mode autonome impossible : ouvrez Jarvis une fois avec le PC allumé pour récupérer vos IA." };
   let bi = 0;
   const notes = LS.get("jarvis_notes", []), hist = LS.get("jarvis_hist", []);
@@ -86,7 +112,7 @@ async function soloAsk(text) {
       } catch { log.push(b.id + " injoignable → IA suivante"); }
       r = null;
     }
-    if (!r) return { reply: "Aucune IA en ligne ne répond pour le moment, monsieur.", log };
+    if (!r) return window.JarvisAndroid?.brainStatus?.() === "ready" ? localAsk(text, notes, hist) : { reply: "Aucune IA en ligne ne répond pour le moment, monsieur.", log };
     const m = (await r.json()).choices[0].message;
     msgs.push({ role: "assistant", content: m.content || "", ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}) });
     if (!m.tool_calls?.length) {
@@ -131,7 +157,8 @@ async function poll() {
     chip("st-net", s.online ? "EN LIGNE" : "HORS LIGNE", s.online ? "ok" : "warn");
     const live = (s.brains || []).filter((b) => b.status === "ok");
     chip("st-brain", s.claude ? "CLAUDE" : live.length ? live[0].name.toUpperCase() + (live.length > 1 ? " +" + (live.length - 1) : "") : s.local ? "LOCAL" : "AUCUN CERVEAU", s.claude || live.length ? "ok" : s.local ? "warn" : "bad");
-    chip("st-wake", s.wake ? "HEY JARVIS" : "MICRO OFF", s.wake ? "ok" : "warn");
+    chip("st-wake", s.wake_dead ? "MICRO MUET" : s.wake ? "HEY JARVIS" : "MICRO OFF", s.wake && !s.wake_dead ? "ok" : "warn");
+    if (s.wake_dead && !window._deadSaid) { window._deadSaid = 1; line("Le micro du PC ne capte rien : branchez un micro ou un casque (je bascule dessus automatiquement).", "log"); }
     $("ver").textContent = (s.version ? "VERSION " + s.version.toUpperCase() : "") + "  ·  " + (s.update || "").toUpperCase();
   } catch (e) { if (e.message !== "auth") setSolo(true); }
 }
@@ -191,6 +218,11 @@ function nextTurn() { if (CONV && !rec && !srec) setTimeout(() => CONV && startL
 // ---------- Voix (sortie) : voix neuronale du serveur, secours voix du navigateur ----------
 let player = null;
 function speakBrowser(text) {
+  if (window.JarvisAndroid?.speak) {            // appli Android : voix native du téléphone (marche hors ligne)
+    setState("speaking");
+    window.onAndroidSpoken = () => { setState(""); nextTurn(); };
+    return JarvisAndroid.speak(text);
+  }
   if (!("speechSynthesis" in window)) return setState("");
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
@@ -203,7 +235,7 @@ function speakBrowser(text) {
 }
 async function speak(text) {
   if (!text) return setState("");
-  window.speechSynthesis?.cancel(); player?.pause();
+  window.speechSynthesis?.cancel(); player?.pause(); window.JarvisAndroid?.stopSpeak?.();
   if (SOLO) return speakBrowser(text);
   try {
     const r = await fetch("/api/tts?t=" + encodeURIComponent(text.slice(0, 1500)), { headers: { "X-Jarvis-Token": TOKEN } });
