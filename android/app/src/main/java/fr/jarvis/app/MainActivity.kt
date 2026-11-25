@@ -61,14 +61,16 @@ class MainActivity : Activity() {
     private fun askUrl() {
         val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(40, 20, 40, 0) }
         val input = EditText(this).apply { setText(url()); hint = "Adresse de Jarvis" }
-        val key = EditText(this).apply { setText(WakeService.key(this@MainActivity)); hint = "Clé Picovoice (mot « Jarvis »)" }
+        val sw = android.widget.Switch(this).apply { text = "Écoute « Hey Jarvis » en arrière-plan"; isChecked = WakeService.enabled(this@MainActivity) }
+        val sens = android.widget.SeekBar(this).apply { max = 80; progress = ((0.9f - WakeService.threshold(this@MainActivity)) * 100).toInt().coerceIn(0, 80) }
+        val lbl = android.widget.TextView(this).apply { text = "Sensibilité (vers la droite = réagit plus facilement)" }
         val err = prefs.getString("wake_error", "")
-        box.addView(input); box.addView(key)
+        box.addView(input); box.addView(sw); box.addView(lbl); box.addView(sens)
         AlertDialog.Builder(this).setTitle("Réglages Jarvis").setView(box)
-            .setMessage(if (err.isNullOrBlank()) "Clé gratuite : console.picovoice.ai" else "Dernière erreur d'écoute : $err")
+            .setMessage(if (err.isNullOrBlank()) "Quittez l'appli, puis dites « Hey Jarvis »." else "Dernière erreur d'écoute : $err")
             .setPositiveButton("OK") { _, _ ->
-                prefs.edit().putString("url", input.text.toString().trim()).putString("pv_key", key.text.toString().trim())
-                    .putString("wake_error", "").apply()
+                prefs.edit().putString("url", input.text.toString().trim()).putBoolean("wake_on", sw.isChecked)
+                    .putFloat("wake_thr", 0.9f - sens.progress / 100f).putString("wake_error", "").apply()
                 web.loadUrl(url())
             }
             .setNegativeButton("Annuler", null).show()

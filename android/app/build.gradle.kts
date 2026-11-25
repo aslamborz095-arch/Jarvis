@@ -14,5 +14,5 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
-    implementation("ai.picovoice:porcupine-android:3.0.+")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 }
