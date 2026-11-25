@@ -450,6 +450,7 @@ async function pollEvents() {
       if (e.type === "state") setState(e.state === "idle" ? "" : e.state);
       if (e.type === "user") line(e.text, "user");
       if (e.type === "reply" || e.type === "confirm") handle(e.res, false);
+      if (e.type === "reminder") { line("⏰ Rappel : " + e.text); typeOut("⏰ " + e.text); }
       if (e.type === "idea") line("💡 Idée de nouvelle compétence : " + e.text + " — dites « crée cette compétence » pour que je l'apprenne.", "log");
     }
   } catch {}
@@ -457,6 +458,18 @@ async function pollEvents() {
 setInterval(pollEvents, 1500); pollEvents();
 
 window.jarvis = { send, line, api, speak };
+
+// ---------- Briefing à la première ouverture de la journée ----------
+setTimeout(async () => {
+  const today = new Date().toDateString();
+  if (SOLO || store.get("jarvis_brief") === today) return;
+  try {
+    setState("thinking", "BRIEFING");
+    const r = await api("/api/briefing");
+    store.set("jarvis_brief", today);
+    lastAsked = ""; handle({ reply: r.reply, log: [] });
+  } catch { setState(""); }
+}, WALL ? 1500 : 4000);
 
 // ---------- Appli installable + fonctionnement sans le PC ----------
 if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});

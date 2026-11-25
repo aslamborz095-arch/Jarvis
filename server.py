@@ -124,6 +124,13 @@ def log_tail(request: Request, n: int = 80):
     return {"log": "\n".join(p.read_text(encoding="utf-8", errors="replace").splitlines()[-n:]) if p.exists() else ""}
 
 
+@app.get("/api/briefing")
+def briefing(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import proactive
+    return {"reply": proactive.spoken_briefing()}
+
+
 @app.get("/api/voices")
 def voices(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
@@ -371,8 +378,9 @@ if __name__ == "__main__":
     if os.getenv("AUTO_UPDATE", "true").lower() == "true":
         updater.start_background()
     brain.warmup()
-    import memory_ext
+    import memory_ext, proactive
     memory_ext.start_background()
+    proactive.start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))
