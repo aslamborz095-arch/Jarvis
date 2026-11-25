@@ -43,7 +43,7 @@ def _rms(a):
 
 def _record(q, noise):
     """Enregistre la commande jusqu'au silence (max 12 s)."""
-    thr = max(90.0, noise * 1.8)
+    thr = max(30.0, noise * 2.2)   # micro faible : seuil bas
     frames, started, silent = [], False, 0
     t0 = time.time()
     while time.time() - t0 < 12:
@@ -61,15 +61,25 @@ def _record(q, noise):
     return frames if started else None
 
 
+# phrases que Whisper invente sur du silence : à ignorer
+HALLU = re.compile(r"sous-?titr|radio-canada|amara|merci d.avoir regard|abonnez|♪|^\W*$", re.I)
+
+
+def ack():
+    """Réponse immédiate au mot d'éveil (le bip seul ne s'entend pas sur tous les PC)."""
+    speak("Oui, monsieur ?")
+
+
 def _handle(q, noise, text=None):
     import numpy as np
     STATE["busy"] = True
     try:
-        beep()
         if text:
+            beep()
             push("state", state="thinking")
         else:
             push("state", state="listening")
+            ack()
             while not q.empty():
                 q.get_nowait()
             frames = _record(q, noise)
@@ -85,9 +95,11 @@ def _handle(q, noise, text=None):
                 a = np.clip(a * min(29000.0 / pk, 30.0), -32768, 32767).astype(np.int16)   # volume normalisé
                 w.writeframes(a.tobytes())
             text = stt.transcribe(path)
-        if not text:
+        text = NAME.sub("", text or "").strip(" ,.!?")   # « Hey Jarvis » répété en tête : on l'enlève
+        if not text or HALLU.search(text) or len(text) < 3:
             push("state", state="idle")
-            speak("Je n'ai pas compris, monsieur.")
+            if text and not HALLU.search(text):
+                speak("Je n'ai pas compris, monsieur.")
             return
         push("user", text=text)
         res = brain.ask(text)
@@ -103,6 +115,7 @@ def _handle(q, noise, text=None):
         while not q.empty():      # oublie ce que le micro a entendu pendant la réponse
             q.get_nowait()
         STATE["busy"] = False
+        STATE["quiet_until"] = time.time() + 2.0   # pas de réveil sur l'écho de sa propre voix
 
 
 SKIP = re.compile(r"mapper|mixage|stereo|stéréo|ligne|line|pilote de capture|primary", re.I)
@@ -184,6 +197,9 @@ def _run():
             STATE["level"] = round(max(STATE["level"] * 0.9, r))
             score = max(model.predict(c).values())
             STATE["score"] = round(max(STATE["score"] * 0.95, float(score)), 2)
+            if time.time() < STATE.get("quiet_until", 0):
+                burst, quiet = [], 0
+                continue
             if score >= THRESHOLD:
                 _handle(q, noise)
                 model.reset(); burst, quiet = [], 0
@@ -198,10 +214,10 @@ def _run():
                     if 4 <= len(seg) <= 75 and time.time() - last_check > 1.0:
                         last_check = time.time()
                         text = stt.quick(np.concatenate(seg))
-                        m = NAME.search(text or "")
+                        m = NAME.search(text or "") if not HALLU.search(text or "") else None
                         if m:
                             STATE["heard"] = text
-                            rest = text[m.end():].strip(" ,.!?").strip()
+                            rest = NAME.sub("", text[m.end():]).strip(" ,.!?").strip()
                             _handle(q, noise, rest if len(rest.split()) >= 2 else None)
                             model.reset()
             if len(burst) > 75:
