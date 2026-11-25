@@ -125,11 +125,11 @@ Réponds UNIQUEMENT par un JSON :
 N'invente rien. Listes vides si rien d'utile."""
 
 
-def _llm(prompt):
+def _llm(prompt, max_tokens=500):
     import providers
     for p in providers.available():
         try:
-            m = providers.call(p, [{"role": "user", "content": prompt}], None, max_tokens=500)
+            m = providers.call(p, [{"role": "user", "content": prompt}], None, max_tokens=max_tokens)
             return m.get("content") or ""
         except providers.ProviderError as e:
             providers.cool(e)

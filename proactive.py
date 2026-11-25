@@ -60,7 +60,7 @@ def spoken_briefing():
         import learning
         txt = learning._llm("Tu es JARVIS. Fais un briefing parlé en français, 3 à 5 phrases, ton calme et britannique, "
                             "commence par saluer monsieur selon l'heure (" + datetime.datetime.now().strftime("%H:%M") +
-                            "). Seulement l'essentiel, pas de liste, pas de markdown :\n" + raw)
+                            "). Seulement l'essentiel, pas de liste, pas de markdown :\n" + raw, max_tokens=2500)
         return txt.strip() or raw
     except Exception:
         return raw
