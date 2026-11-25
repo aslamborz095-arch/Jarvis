@@ -118,7 +118,8 @@ def _candidates(sd):
         default = -1
     out = [i for i, d in enumerate(sd.query_devices())
            if d["max_input_channels"] > 0 and d["hostapi"] == mme and not SKIP.search(d["name"])]
-    return sorted(out, key=lambda i: (i != default, "bthhfenum" in sd.query_devices(i)["name"] or "Hands-Free" in sd.query_devices(i)["name"]))
+    bt = lambda i: "bthhfenum" in sd.query_devices(i)["name"] or "Hands-Free" in sd.query_devices(i)["name"]
+    return sorted([i for i in out if i == default or not bt(i)], key=lambda i: i != default) + [i for i in out if i != default and bt(i)]
 
 
 def pick_device():
@@ -127,13 +128,20 @@ def pick_device():
     if DEVICE:
         return int(DEVICE) if DEVICE.isdigit() else DEVICE
     best, best_r = None, 0.0
-    for i in _candidates(sd):
-        try:
-            a = sd.rec(int(RATE * 0.8), samplerate=RATE, channels=1, dtype="int16", device=i)
-            sd.wait()
-            r = _rms(a[int(RATE * 0.1):, 0])
-        except Exception:
+    for i in _candidates(sd)[:6]:
+        box = []
+
+        def probe():
+            try:
+                with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", device=i) as s:
+                    a, _ = s.read(int(RATE * 0.8))
+                box.append(_rms(a[int(RATE * 0.1):, 0]))
+            except Exception:
+                pass
+        th = threading.Thread(target=probe, daemon=True); th.start(); th.join(3)   # un micro Bluetooth absent peut bloquer
+        if not box:
             continue
+        r = box[0]
         STATE.setdefault("probe", {})[sd.query_devices(i)["name"]] = round(r)
         if r > best_r * 1.5:          # un micro vivant capte au moins le souffle de la pièce
             best, best_r = i, r
@@ -153,10 +161,7 @@ def _run():
         q.put(indata[:, 0].copy())
 
     dev = pick_device()
-    try:
-        stt.quick(np.zeros(1600, dtype=np.int16))   # précharge le détecteur Whisper
-    except Exception:
-        pass
+    threading.Thread(target=lambda: stt.quick(np.zeros(1600, dtype=np.int16)), daemon=True).start()   # précharge Whisper
     with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK, callback=cb, device=dev):
         STATE["enabled"], STATE["error"] = True, None
         try:
