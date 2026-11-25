@@ -49,13 +49,15 @@ class MainActivity : Activity() {
             override fun onPermissionRequest(request: PermissionRequest) { runOnUiThread { request.grant(request.resources) } }
         }
         tts = TextToSpeech(this) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.FRANCE }
-        LocalBrain.ensure(this)
-        getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(n: android.net.Network) {
-                LocalBrain.ensure(this@MainActivity)
-                runOnUiThread { if (web.url?.contains("appassets.androidplatform.net") == true) web.loadUrl(url()) }
-            }
-        })
+        try {
+            LocalBrain.ensure(this)
+            getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(n: android.net.Network) {
+                    try { LocalBrain.ensure(this@MainActivity) } catch (_: Exception) {}
+                    runOnUiThread { if (web.url?.contains("appassets.androidplatform.net") == true) web.loadUrl(url()) }
+                }
+            })
+        } catch (e: Exception) { prefs.edit().putString("wake_error", "réseau : ${e.message}").apply() }
         web.webViewClient = object : WebViewClient() {
             // sert l'interface embarquée dans l'appli (assets/www) : Jarvis s'ouvre même sans Wi-Fi ni données
             override fun shouldInterceptRequest(view: WebView, req: WebResourceRequest): WebResourceResponse? {
@@ -78,10 +80,10 @@ class MainActivity : Activity() {
         web.loadUrl(if (online()) url() else LOCAL)
     }
 
-    private fun online(): Boolean {
+    private fun online(): Boolean = try {
         val cm = getSystemService(android.net.ConnectivityManager::class.java)
-        return cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-    }
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    } catch (e: Exception) { true }
 
     private fun url() = prefs.getString("url", defaultUrl)!!
 

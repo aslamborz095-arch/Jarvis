@@ -27,11 +27,11 @@ object LocalBrain {
         else -> "absent"
     }
 
-    private fun wifi(c: Context): Boolean {
+    private fun wifi(c: Context): Boolean = try {
         val cm = c.getSystemService(ConnectivityManager::class.java)
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    } catch (e: Exception) { false }
 
     /** Télécharge le cerveau en arrière-plan (Wi-Fi seulement sauf si force). */
     fun ensure(c: Context, force: Boolean = false) {
