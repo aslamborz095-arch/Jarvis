@@ -280,9 +280,29 @@ def _run():
         lm.close()
 
 
+def _ensure_deps():
+    """Installe mediapipe + opencv au premier usage si la mise à jour ne l'a pas fait."""
+    try:
+        import cv2, mediapipe  # noqa
+        return
+    except ImportError:
+        pass
+    import subprocess, sys
+    STATE["error"] = "installation de mediapipe… (1-3 min)"
+    exe = sys.executable.replace("pythonw.exe", "python.exe")
+    r = subprocess.run([exe, "-m", "pip", "install", "-q", "mediapipe", "opencv-python"], capture_output=True, text=True,
+                       creationflags=0x08000000 if os.name == "nt" else 0)
+    if r.returncode:
+        raise RuntimeError("pip : " + (r.stderr or r.stdout)[-300:])
+    import importlib
+    importlib.invalidate_caches()
+    STATE["error"] = None
+
+
 def _loop():
     STATE["running"], STATE["error"] = True, None
     try:
+        _ensure_deps()
         _run()
     except Exception as e:
         STATE["error"] = str(e)[:200]
@@ -298,6 +318,8 @@ def start():
     _thread = threading.Thread(target=_loop, daemon=True)
     _thread.start()
     time.sleep(3)
+    if STATE["error"] and "installation" in STATE["error"]:
+        return "Installation du module des mains en cours (1-3 min), réessaie ensuite."
     return f"Erreur mains : {STATE['error']}" if STATE["error"] else "Contrôle par les mains actif sur tout le PC."
 
 
