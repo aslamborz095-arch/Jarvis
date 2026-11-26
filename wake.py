@@ -163,6 +163,54 @@ def pick_device():
     return best
 
 
+def fix_mic():
+    """Répare seul le micro Windows : accès des applis de bureau autorisé, micros réactivés et volume à 100 %."""
+    if os.name != "nt":
+        return
+    done = []
+    try:
+        import winreg
+        for sub in (r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone",
+                    r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged"):
+            k = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, sub, 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(k, "Value", 0, winreg.REG_SZ, "Allow"); winreg.CloseKey(k)
+        done.append("accès micro autorisé")
+    except Exception as e:
+        done.append(f"accès: {e}"[:80])
+    try:
+        try:
+            import pycaw  # noqa
+        except ImportError:
+            import sys
+            subprocess.run([sys.executable.replace("pythonw.exe", "python.exe"), "-m", "pip", "install", "-q", "pycaw"],
+                           capture_output=True, creationflags=0x08000000)
+        import comtypes
+        from ctypes import cast, POINTER
+        from comtypes import CLSCTX_ALL
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        comtypes.CoInitialize()
+        n = 0
+        mics = []
+        try:
+            from pycaw.constants import EDataFlow, DEVICE_STATE
+            enum = AudioUtilities.GetDeviceEnumerator()
+            col = enum.EnumAudioEndpoints(EDataFlow.eCapture.value, DEVICE_STATE.ACTIVE.value)
+            mics = [col.Item(i) for i in range(col.GetCount())]
+        except Exception:
+            m = AudioUtilities.GetMicrophone()
+            mics = [m] if m else []
+        for m in mics:
+            try:
+                v = cast(m.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None), POINTER(IAudioEndpointVolume))
+                v.SetMute(0, None); v.SetMasterVolumeLevelScalar(1.0, None); n += 1
+            except Exception:
+                pass
+        done.append(f"{n} micro(s) réactivé(s) à 100 %")
+    except Exception as e:
+        done.append(f"volume: {e}"[:80])
+    STATE["mic_fix"] = " ; ".join(done)
+
+
 def _run():
     import numpy as np, sounddevice as sd, openwakeword
     from openwakeword.model import Model
@@ -173,6 +221,8 @@ def _run():
     def cb(indata, frames, t, status):
         q.put(indata[:, 0].copy())
 
+    if not STATE.get("mic_fix"):
+        fix_mic()
     dev = pick_device()
     threading.Thread(target=lambda: stt.quick(np.zeros(1600, dtype=np.int16)), daemon=True).start()   # précharge Whisper
     with sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK, callback=cb, device=dev):

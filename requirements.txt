@@ -17,3 +17,4 @@ pillow
 # gestes des mains en arrière-plan (caméra du PC)
 mediapipe
 opencv-python
+pycaw

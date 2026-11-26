@@ -96,6 +96,7 @@ def status(request: Request, x_jarvis_token: str = Header("")):
         "wake_dead": wake.STATE.get("mic_dead"),
         "wake_probe": wake.STATE.get("probe"),
         "wake_heard": wake.STATE.get("heard"),
+        "mic_fix": wake.STATE.get("mic_fix"),
         "autopilot": {k: __import__("autopilot").STATE[k] for k in ("running", "goal", "step", "last")},
     }
 
