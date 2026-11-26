@@ -10,7 +10,8 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 CONFIRM = os.getenv("CONFIRM_DANGEROUS", "true").lower() == "true"
 MAX_STEPS = 25
 # Modèle gardé en mémoire + contexte fixe : le début du prompt (consignes + outils) reste en cache
-OLLAMA_OPTS = {"keep_alive": -1, "options": {"num_ctx": int(os.getenv("OLLAMA_CTX", "6144")), "num_predict": 600}}
+OLLAMA_OPTS = {"keep_alive": os.getenv("OLLAMA_KEEP", "10m"),   # libère ~2,3 Go de RAM après 10 min sans usage
+               "options": {"num_ctx": int(os.getenv("OLLAMA_CTX", "6144")), "num_predict": 600}}
 
 import pathlib
 HIST_FILE = pathlib.Path(__file__).parent / "data" / "history.json"
@@ -335,6 +336,11 @@ def warmup():
     import threading
     def run():
         try:
+            if online():
+                # En ligne, les cerveaux cloud répondent : on décharge le modèle local (≈2,3 Go de RAM rendus)
+                if ollama_ok():
+                    httpx.post(f"{OLLAMA_URL}/api/generate", timeout=30, json={"model": OLLAMA_MODEL, "keep_alive": 0})
+                return
             if ollama_ok() or start_ollama():
                 httpx.post(f"{OLLAMA_URL}/api/chat", timeout=900, json={
                     "model": OLLAMA_MODEL, "stream": False, "tools": _ollama_tools(), **OLLAMA_OPTS,
