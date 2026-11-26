@@ -91,6 +91,11 @@ def chain(lvl="complex"):
             out.append("claude")
     if ollama_ok() or start_ollama():
         out.append("ollama")
+    try:
+        import metrics
+        out = metrics.rank_brains(out)   # les IA qui échouent souvent passent en fin de cascade
+    except Exception:
+        pass
     return out
 
 
@@ -117,6 +122,8 @@ def system_prompt():
         "propose puis crée une compétence avec create_skill (l'utilisateur la valide). "
         "Tu as des yeux : screen_look (écran du PC) et phone_look (écran du téléphone) quand il faut voir une image, une vidéo ou une interface. "
         "Auto-évolution : toutes les 6 h tu analyses tes échecs et crées/testes seul des compétences ; evolve_now lance un cycle, evolution_report montre ce qui attend, evolution_apply active (validation de l'utilisateur). "
+        "Pour un livrable (synthèse, texte, plan, comparatif, recherche approfondie), utilise team_task : chercheur, rédacteur et relecteur travaillent pour toi. performance_report donne tes taux de réussite. "
+        "Pour un objectif long en plusieurs étapes (préparer, organiser, suivre, rechercher sur la durée), lance mission_start : tu le mènes seul en arrière-plan ; mission_status / mission_stop. "
         "Autonomie PC : pour toute tâche dans une interface sans outil direct (appli, site, réglages, formulaire), appelle screen_task avec le but complet ; il pilote l'écran seul jusqu'au bout. screen_stop l'arrête. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
@@ -131,6 +138,8 @@ GROUPS = {
                lambda n: n.startswith(("gmail_", "calendar_"))),
     "media": (("musique", "spotify", "chanson", "volume", "pause", "lecture", "suivant", "precedent", "morceau", "titre", "artiste", "playlist", "son "),
               lambda n: n in ("media_control", "music_search")),
+    "missions": (("mission", "objectif", "arriere-plan", "arriere plan", "suivre", "organise", "prepare"),
+                 lambda n: n.startswith("mission_")),
     "evolve": (("evolu", "amelior", "ameliore", "competence", "apprend", "progress"),
                lambda n: n.startswith("evol")),
 }
@@ -264,24 +273,36 @@ def ask(message):
         if lessons:
             msgs[-1]["content"] = "[Leçons apprises lors de tâches similaires : " + " | ".join(lessons) + "]\n" + msgs[-1]["content"]
         st = {"backend": backend, "messages": msgs, "queue": [], "results": [], "steps": 0, "log": log}
+        t0 = __import__("time").time()
         try:
             text = _call_model(st)
             res = _finish(st, text) if text is not None else _loop(st)
             res["backend"] = backend
+            _measure(backend, True, t0)
             if not res.get("confirm"):
                 learn(message, res)
             return res
         except providers.ProviderError as e:
             providers.cool(e)
             err = str(e)
+            _measure(backend, False, t0, err)
             log.append(f"{backend.replace('oa:', '')} indisponible ({e.status}) → IA suivante")
         except Exception as e:
             err = str(e)
+            _measure(backend, False, t0, err)
             log.append(f"{backend.replace('oa:', '')} en erreur → IA suivante")
     return {"reply": f"Toutes mes IA sont indisponibles pour le moment, monsieur. ({err[:150]})", "backend": None, "log": log}
 
 
-def delegate(task: str, level: str = "simple"):
+def _measure(backend, ok, t0, err=""):
+    try:
+        import metrics, time
+        metrics.record_brain(backend, ok, (time.time() - t0) * 1000, err)
+    except Exception:
+        pass
+
+
+def delegate(task: str, level: str = "simple", allowed=None):
     """Sous-agent : exécute une sous-tâche avec le niveau d'IA demandé (simple = rapide/économe, complex = puissant)."""
     order = chain("complex" if level.startswith("c") else "simple")
     for backend in order:
@@ -291,8 +312,12 @@ def delegate(task: str, level: str = "simple"):
             text = _call_model(st)
             while text is None:
                 for c in st["queue"]:
-                    out = "Refusé : un sous-agent ne peut pas faire d'action sensible." if c["name"] in tools.DANGEROUS or c["name"] == "delegate" \
-                        else tools.execute(c["name"], c["args"])
+                    if c["name"] in tools.DANGEROUS or c["name"] in ("delegate", "team_task"):
+                        out = "Refusé : un sous-agent ne peut pas faire d'action sensible."
+                    elif allowed is not None and c["name"] not in allowed:
+                        out = "Outil non autorisé pour ce rôle. Outils permis : " + (", ".join(sorted(allowed)) or "aucun")
+                    else:
+                        out = tools.execute(c["name"], c["args"])
                     st["results"].append((c, out))
                 st["queue"] = []
                 _flush(st); st["steps"] += 1

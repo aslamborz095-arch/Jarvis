@@ -62,6 +62,11 @@ def signals():
             if bad or FAIL.search(e.get("reply", "")[:200]):
                 out["echecs"].append({"demande": e["user"][:160], "actions": bad[:3], "reponse": e["reply"][:160]})
     out["echecs"] = out["echecs"][-15:]
+    try:
+        import metrics
+        out["outils_faibles"] = metrics.weak_tools()
+    except Exception:
+        out["outils_faibles"] = []
     return out
 
 
@@ -214,7 +219,7 @@ def cycle(push=None):
         except Exception as e:
             report.append(f"auto-réparation en erreur ({e})")
         sig = signals()
-        if not (sig["echecs"] or sig["skills_ko"] or sig["idees"]):
+        if not (sig["echecs"] or sig["skills_ko"] or sig["idees"] or sig["outils_faibles"]):
             report.append("aucun point faible détecté")
             _log({"kind": "cycle", "result": " ; ".join(report)})
             return "Évolution : " + " ; ".join(report) + "."

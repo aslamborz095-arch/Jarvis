@@ -132,7 +132,13 @@ def evolution(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
     import evolve
     return {"state": evolve.STATE, "pending": [{k: v for k, v in p.items() if k != "code"} for p in evolve.pending()],
-            "journal": evolve._read(evolve.JOURNAL, [])[-20:]}
+            "journal": evolve._read(evolve.JOURNAL, [])[-20:], "metrics": __import__("metrics").summary()}
+
+
+@app.get("/api/metrics")
+def metrics_view(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    return __import__("metrics").summary()
 
 
 @app.post("/api/evolution/run")
@@ -502,6 +508,7 @@ if __name__ == "__main__":
     proactive.start()
     import evolve
     evolve.start()
+    __import__("missions").start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))

@@ -164,11 +164,11 @@ SPECS = [
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
 
-import phone, vision, google_apps, media, learning, proactive, autopilot, hands_native, evolve
-SPECS += hands_native.SPECS + phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS + evolve.SPECS
-for m in (hands_native, phone, vision, autopilot, google_apps, media, learning, proactive, evolve):
+import phone, vision, google_apps, media, learning, proactive, autopilot, hands_native, evolve, metrics, team, missions
+SPECS += hands_native.SPECS + phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS + evolve.SPECS + metrics.SPECS + team.SPECS + missions.SPECS
+for m in (hands_native, phone, vision, autopilot, google_apps, media, learning, proactive, evolve, metrics, team, missions):
     FUNCS.update(m.FUNCS)
-DANGEROUS |= google_apps.DANGEROUS | learning.DANGEROUS | autopilot.DANGEROUS | evolve.DANGEROUS
+DANGEROUS |= {"phone_sms"} | google_apps.DANGEROUS | learning.DANGEROUS | autopilot.DANGEROUS | evolve.DANGEROUS
 learning.load_skills()   # compétences écrites par Jarvis
 
 
@@ -183,6 +183,17 @@ FUNCS["delegate"] = delegate
 
 
 def execute(name, args):
+    import time
+    t0 = time.time()
+    out = _execute(name, args)
+    try:
+        metrics.record_tool(name, out, (time.time() - t0) * 1000)
+    except Exception:
+        pass
+    return out
+
+
+def _execute(name, args):
     import inspect
     try:
         f = FUNCS[name]
