@@ -99,10 +99,13 @@ def audit(code):
 
 
 RUNNER = r'''
-import json, sys
+import json, sys, inspect
 src, args = sys.argv[1], json.loads(sys.argv[2])
 ns = {"__name__": "skill_test"}
 exec(compile(open(src, encoding="utf-8").read(), src, "exec"), ns)
+ps = inspect.signature(ns["run"]).parameters
+if not any(p.kind == p.VAR_KEYWORD for p in ps.values()):
+    args = {k: v for k, v in args.items() if k in ps}   # comme tools.execute
 r = ns["run"](**args)
 print("@@OK@@" + json.dumps(str(r)[:1500], ensure_ascii=False))
 '''
@@ -158,6 +161,16 @@ Réponds UNIQUEMENT par un JSON : {{"improvements": [{{"name": "...", "why": "un
 Liste vide si rien de vraiment utile."""
 
 
+FIX = """Ce code Python de compétence échoue à son test. Corrige-le (mêmes contraintes : pas de subprocess/shutil/socket/ctypes,
+pas de suppression ni d'écriture de fichier, def run(...) -> str, try/except, texte en français).
+Les noms des paramètres de run doivent correspondre exactement aux test_args.
+Code :
+{code}
+test_args : {args}
+Erreur : {err}
+Réponds UNIQUEMENT par un JSON : {{"code": "...", "parameters": {{...}}, "test_args": {{...}}}}"""
+
+
 CONSOLIDATE = """Voici les leçons apprises par l'assistant JARVIS (une par ligne). Fusionne les doublons, supprime les contradictoires
 ou inutiles, garde les plus concrètes. Au plus 60 leçons. Réponds UNIQUEMENT par un JSON : {{"lessons": ["...", ...]}}
 {ls}"""
@@ -210,6 +223,17 @@ def cycle(push=None):
             name = learning._safe_name(p.get("name", "x")); code = p.get("code", "")
             why = audit(code)
             ok, res = (False, "refusé par le contrôle : " + why) if why else test_skill(code, p.get("test_args") or {})
+            if not ok and not why:   # une tentative d'auto-réparation avec l'erreur
+                fix = _llm(FIX.format(code=code, args=json.dumps(p.get("test_args") or {}), err=res[-800:]), 3000)
+                m2 = re.search(r"\{.*\}", fix, re.S)
+                try:
+                    f = json.loads(m2.group(0)); code2 = f.get("code") or ""
+                    if code2 and not audit(code2):
+                        ok, res = test_skill(code2, f.get("test_args") or p.get("test_args") or {})
+                        if ok:
+                            code = code2; p["parameters"] = f.get("parameters") or p.get("parameters")
+                except Exception:
+                    pass
             entry = {"name": name, "why": p.get("why", ""), "description": p.get("description", ""), "test": res[:400], "ok": ok}
             if ok:
                 _write(EVO / f"{name}.json", {**entry, "parameters": p.get("parameters") or {}, "code": code})
