@@ -26,6 +26,8 @@ from fastapi.responses import JSONResponse
 @app.exception_handler(Exception)
 async def _oops(request, exc):
     # toujours du JSON lisible pour l'interface, jamais « Internal Server Error »
+    import repair
+    repair.capture(str(request.url.path), exc)
     return JSONResponse({"reply": f"Erreur interne : {str(exc)[:200]}", "log": []}, status_code=200)
 
 

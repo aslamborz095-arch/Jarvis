@@ -195,4 +195,7 @@ def execute(name, args):
     except Exception as e:
         if name.startswith("skill_"):
             evolve.record_error(name, f"{type(e).__name__} : {e}")
+        else:
+            import repair
+            repair.capture("outil " + name, e)
         return f"Erreur {type(e).__name__} : {e}"

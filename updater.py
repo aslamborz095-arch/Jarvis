@@ -61,6 +61,11 @@ def check_and_apply(restart=True):
                 else:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(zf.read(name))
+        try:
+            import repair
+            repair.reapply()   # garde les auto-réparations locales encore valables
+        except Exception:
+            pass
         if _req_hash() != before:
             _pip_install()
         VERSION_FILE.parent.mkdir(exist_ok=True)

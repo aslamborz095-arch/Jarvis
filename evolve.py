@@ -206,6 +206,13 @@ def cycle(push=None):
         gone = consolidate_lessons()
         if gone:
             report.append(f"{gone} leçons fusionnées")
+        try:
+            import repair
+            r = repair.propose(push)
+            if r:
+                report.append(r)
+        except Exception as e:
+            report.append(f"auto-réparation en erreur ({e})")
         sig = signals()
         if not (sig["echecs"] or sig["skills_ko"] or sig["idees"]):
             report.append("aucun point faible détecté")
@@ -257,7 +264,8 @@ def cycle(push=None):
 
 
 def pending():
-    return [_read(f, {}) for f in sorted(EVO.glob("skill_*.json"))] if EVO.exists() else []
+    import repair
+    return ([_read(f, {}) for f in sorted(EVO.glob("skill_*.json"))] if EVO.exists() else []) + repair.pending()
 
 
 # ---------- outils ----------
@@ -279,7 +287,9 @@ def evolution_report():
 
 def evolution_apply(name: str):
     """Active une amélioration en attente (après validation de l'utilisateur)."""
-    import learning
+    import learning, repair
+    if name.strip().startswith("fix_"):
+        return repair.apply(name.strip())
     nm = learning._safe_name(name)
     f = EVO / f"{nm}.json"
     if not f.exists():
@@ -295,7 +305,9 @@ def evolution_apply(name: str):
 
 
 def evolution_reject(name: str):
-    import learning
+    import learning, repair
+    if name.strip().startswith("fix_"):
+        return repair.reject(name.strip())
     f = EVO / f"{learning._safe_name(name)}.json"
     if f.exists():
         f.unlink(); _log({"kind": "rejected", "name": f.stem})
@@ -321,7 +333,7 @@ def start():
 S = {"type": "string"}
 E = {"type": "object", "properties": {}, "required": []}
 SPECS = [
-    ("evolve_now", "Lance maintenant un cycle d'auto-amélioration (analyse des échecs, création et test de nouvelles compétences).", E),
+    ("evolve_now", "Lance maintenant un cycle d'auto-amélioration (analyse des échecs, réparation de ton propre code, création et test de nouvelles compétences).", E),
     ("evolution_report", "Montre les améliorations en attente de validation et l'historique d'évolution.", E),
     ("evolution_apply", "Active une amélioration en attente (nom donné par evolution_report).",
      {"type": "object", "properties": {"name": S}, "required": ["name"]}),
