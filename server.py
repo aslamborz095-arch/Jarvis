@@ -101,6 +101,19 @@ def status(request: Request, x_jarvis_token: str = Header("")):
     }
 
 
+@app.get("/api/top")
+def top(request: Request, x_jarvis_token: str = Header("")):
+    """Programmes qui consomment le plus de mémoire (diagnostic PC lent)."""
+    auth(x_jarvis_token, request)
+    agg = {}
+    for p in psutil.process_iter(["name", "memory_info"]):
+        try:
+            n = p.info["name"]; agg[n] = agg.get(n, 0) + p.info["memory_info"].rss
+        except Exception:
+            pass
+    return [{"name": n, "mo": round(v / 2**20)} for n, v in sorted(agg.items(), key=lambda x: -x[1])[:12]]
+
+
 @app.post("/api/autopilot/stop")
 def autopilot_stop(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
