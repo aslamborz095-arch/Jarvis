@@ -65,9 +65,29 @@ def _record(q, noise):
 HALLU = re.compile(r"sous-?titr|radio-canada|amara|merci d.avoir regard|abonnez|♪|^\W*$", re.I)
 
 
+def _chime_path():
+    """Carillon WAV généré une fois (joué instantanément, contrairement à la synthèse vocale)."""
+    import numpy as np
+    p = os.path.join(tempfile.gettempdir(), "jarvis_chime.wav")
+    if not os.path.exists(p):
+        sr, out = 22050, []
+        for f, d in ((880, 0.09), (1320, 0.14)):
+            x = np.arange(int(sr * d)) / sr
+            env = np.minimum(1, x / 0.005) * np.exp(-x * 18)
+            out.append(np.sin(2 * np.pi * f * x) * env)
+        a = (np.concatenate(out) * 0.6 * 32767).astype(np.int16)
+        with wave.open(p, "wb") as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr); wf.writeframes(a.tobytes())
+    return p
+
+
 def ack():
-    """Réponse immédiate au mot d'éveil (le bip seul ne s'entend pas sur tous les PC)."""
-    speak("Oui, monsieur ?")
+    """Réponse immédiate au mot d'éveil : carillon audible sur les haut-parleurs (≈0,25 s)."""
+    try:
+        import winsound
+        winsound.PlaySound(_chime_path(), winsound.SND_FILENAME)
+    except Exception:
+        beep()
 
 
 def _handle(q, noise, text=None):

@@ -121,7 +121,12 @@ $p.settings.volume = 100
 $p.URL = $env:JARVIS_MP3
 $p.controls.play()
 Start-Sleep -Milliseconds 400
-while ($p.playState -eq 3 -or $p.playState -eq 6 -or $p.playState -eq 9) { Start-Sleep -Milliseconds 150 }
+$t = 0
+while (($p.playState -eq 3 -or $p.playState -eq 6 -or $p.playState -eq 9) -and $t -lt 400) {
+  if ($p.playState -ne 3 -and $t -gt 40) { break }   # bloqué en chargement > 6 s : on abandonne
+  Start-Sleep -Milliseconds 150; $t++
+}
+$p.close()
 """
 
 PS_SAY = r"""
@@ -146,7 +151,7 @@ def speak_local(text):
     global _PLAY
     _PLAY = subprocess.Popen(["powershell", "-NoProfile", "-Command", script], env=env, creationflags=0x08000000)
     try:
-        _PLAY.wait(timeout=180)
+        _PLAY.wait(timeout=75)
     except Exception:
         _PLAY.kill()
 
