@@ -100,6 +100,7 @@ def audit(code):
 
 RUNNER = r'''
 import json, sys, inspect
+sys.stdout.reconfigure(encoding="utf-8")
 src, args = sys.argv[1], json.loads(sys.argv[2])
 ns = {"__name__": "skill_test"}
 exec(compile(open(src, encoding="utf-8").read(), src, "exec"), ns)
