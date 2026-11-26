@@ -95,7 +95,7 @@ def _handle(q, noise, text=None):
     STATE["busy"] = True
     try:
         if text:
-            beep()
+            ack()
             push("state", state="thinking")
         else:
             push("state", state="listening")
