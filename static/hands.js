@@ -1,33 +1,43 @@
-// JARVIS — contrôle par les mains (caméra + MediaPipe, 100 % local)
+// JARVIS — contrôle par les mains v3 (caméra + MediaPipe, local)
 // Bouton ✋ : OFF → HUD (pilote l'interface) → PC (pilote Windows) → OFF
-// Gestes :
-//   ☝ index levé ............ déplace le curseur
-//   🤏 pince pouce-index ..... clic ; pince tenue 0,35 s = glisser (relâcher = déposer)
-//   🤏 pince pouce-majeur .... clic droit
-//   ✌ deux doigts haut/bas .. défilement
-//   ✊ poing tenu ............ STOP (arrête Jarvis, la voix et l'autopilote)
-//   🖐 main ouverte immobile . Jarvis écoute (micro)
-//   🖐 balayage ← / → ....... précédent / suivant (Alt+←/→, page ou dossier)
-//   👍 pouce levé ............ lecture / pause musique
-//   🤟 trois doigts tenus .... changer de fenêtre (Alt+Tab)
 const V = "/static/vendor/mediapipe";
 const MODEL_LOCAL = `${V}/hand_landmarker.task`;
 const MODEL_WEB = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
-const btn = document.getElementById("btn-hands");
-const cam = document.getElementById("cam");
-const fx = document.getElementById("handfx");
-const ctx = fx.getContext("2d");
-const cur = document.getElementById("cursor");
-const MODES = ["off", "hud", "pc"];
+const GESTES = [
+  ["point", "☝", "Curseur"], ["pinch", "🤏", "Clic · tenir = glisser"], ["rpinch", "🖕", "Clic droit (pouce-majeur)"],
+  ["vee", "✌", "Défiler"], ["fist", "✊", "STOP"], ["palm", "🖐", "Immobile = écoute · balayer = ◀ ▶"],
+  ["thumb", "👍", "Pause musique"], ["three", "🤟", "Alt+Tab"],
+];
+const HOLD_MS = { fist: 500, thumb: 700, three: 700, palm: 1200 };
 const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
-let mode = "off", landmarker = null, stream = null, sx = 0.5, sy = 0.5, lastSend = 0;
-// état des gestes
-let pinch = null;          // {t, x, y, drag}
-let rpinch = false;
-let hold = { g: "", t: 0, fired: false };
-let lastFire = 0, palmTrail = [], scrollY = null, scrollAcc = 0, lostSince = 0;
+const btn = document.getElementById("btn-hands");
+const cam = document.getElementById("cam");
+document.getElementById("handfx")?.remove();
+const cur = document.getElementById("cursor");
+cur.innerHTML = `<svg viewBox="0 0 60 60"><circle class="r0" cx="30" cy="30" r="13"/><circle class="rh" cx="30" cy="30" r="22" pathLength="100"/><path class="tk" d="M30 2v8M30 50v8M2 30h8M50 30h8"/><circle class="dot" cx="30" cy="30" r="3"/></svg><b></b>`;
+const curLabel = cur.querySelector("b"), ring = cur.querySelector(".rh");
+
+// Panneau holographique
+const ui = document.createElement("div");
+ui.id = "hand-ui"; ui.hidden = true;
+ui.innerHTML = `<div class="hu-head"><span class="hu-dot"></span><span class="hu-mode">MAINS</span><span class="hu-fps"></span></div>
+<div class="hu-view"><canvas></canvas><div class="hu-msg"></div></div>
+<div class="hu-list">${GESTES.map(([k, i, t]) => `<div class="hu-g" data-k="${k}"><i>${i}</i><span>${t}</span></div>`).join("")}</div>`;
+document.body.appendChild(ui);
+const view = ui.querySelector("canvas"), vctx = view.getContext("2d");
+view.width = 320; view.height = 240;
+const msg = ui.querySelector(".hu-msg"), fpsEl = ui.querySelector(".hu-fps"), modeEl = ui.querySelector(".hu-mode");
+const chips = Object.fromEntries([...ui.querySelectorAll(".hu-g")].map((e) => [e.dataset.k, e]));
+
+const MODES = ["off", "hud", "pc"];
+let mode = "off", landmarker = null, stream = null, sx = 0.5, sy = 0.5, lastSend = 0, lastVT = -1;
+let sm = null;                    // repères lissés
+let votes = [], gesture = "none";
+let pinch = null, rpinch = false, hold = { g: "", t: 0, fired: false };
+let lastFire = 0, palmTrail = [], scrollY = null, scrollAcc = 0, lostSince = 0, seenAt = 0;
+let frames = 0, fpsT = 0, flashT = 0;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const send = (body) => window.jarvis.api("/api/pointer", { method: "POST", body: JSON.stringify({ x: sx, y: sy, ...body }) }).catch(() => {});
@@ -35,199 +45,206 @@ const send = (body) => window.jarvis.api("/api/pointer", { method: "POST", body:
 async function load() {
   const { HandLandmarker, FilesetResolver } = await import(`${V}/vision_bundle.mjs`);
   const files = await FilesetResolver.forVisionTasks(V);
-  const opts = (path) => ({ baseOptions: { modelAssetPath: path, delegate: "GPU" }, runningMode: "VIDEO", numHands: 1,
-    minHandDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
-  try { return await HandLandmarker.createFromOptions(files, opts(MODEL_LOCAL)); }
-  catch { return await HandLandmarker.createFromOptions(files, opts(MODEL_WEB)); }
+  const opts = (path, delegate) => ({ baseOptions: { modelAssetPath: path, delegate }, runningMode: "VIDEO", numHands: 1,
+    minHandDetectionConfidence: 0.45, minHandPresenceConfidence: 0.45, minTrackingConfidence: 0.45 });
+  for (const path of [MODEL_LOCAL, MODEL_WEB]) for (const d of ["GPU", "CPU"]) {
+    try { return await HandLandmarker.createFromOptions(files, opts(path, d)); } catch {}
+  }
+  throw new Error("modèle de suivi des mains introuvable");
 }
 
 async function start() {
   try {
+    ui.hidden = false; say("Initialisation…");
     landmarker ||= await load();
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" } });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: "user" } });
     cam.srcObject = stream; await cam.play();
-    cur.hidden = false; requestAnimationFrame(loop);
-    window.jarvis.line((mode === "pc" ? "Mains → PC. " : "Mains → interface. ") +
-      "☝ curseur · 🤏 clic (tenir = glisser) · pouce-majeur = clic droit · ✌ défiler · ✊ STOP · 🖐 immobile = écoute · 🖐 balayage = préc./suiv. · 👍 pause · 🤟 Alt+Tab", "log");
+    cur.hidden = false; seenAt = performance.now(); requestAnimationFrame(loop);
+    window.jarvis.line(mode === "pc" ? "Mains → souris du PC." : "Mains → interface Jarvis.", "log");
   } catch (e) { window.jarvis.line("Caméra / suivi des mains indisponible : " + e.message, "log"); setMode("off"); }
 }
 function stop() {
   if (pinch?.drag && mode === "pc") send({ action: "up" });
-  pinch = null;
+  pinch = null; sm = null; votes = [];
   stream?.getTracks().forEach((t) => t.stop()); stream = null;
-  cur.hidden = true; ctx.clearRect(0, 0, fx.width, fx.height);
+  cur.hidden = true; ui.hidden = true;
 }
 function setMode(m) {
   if (pinch?.drag && mode === "pc") send({ action: "up" });
   mode = m; btn.classList.toggle("on", m !== "off");
   btn.textContent = m === "pc" ? "🖱" : "✋";
+  modeEl.textContent = m === "pc" ? "MAINS · PC" : "MAINS · INTERFACE";
+  ui.classList.toggle("pc", m === "pc");
   if (m === "off") stop(); else if (!stream) start();
-  else window.jarvis.line(m === "pc" ? "Mains : PC." : "Mains : interface.", "log");
 }
 btn.onclick = () => setMode(MODES[(MODES.indexOf(mode) + 1) % 3]);
+function say(t) { msg.textContent = t; msg.hidden = !t; }
 
 // ---------- Lecture de la main ----------
-function read(h) {
-  const palm = dist(h[0], h[9]) || 0.001;
-  const up = (tip, pip) => dist(h[tip], h[0]) > dist(h[pip], h[0]) * 1.12;
-  const f = [up(8, 6), up(12, 10), up(16, 14), up(20, 18)];         // index, majeur, annulaire, auriculaire
-  const thumb = dist(h[4], h[5]) / palm > 0.75 && dist(h[4], h[17]) / palm > 1.1;
+function classify(h) {
+  const palm = dist(h[0], h[9]) || 1e-3;
+  const ext = (tip, pip, mcp) => dist(h[tip], h[0]) > dist(h[pip], h[0]) * 1.08 && dist(h[tip], h[mcp]) / palm > 0.55;
+  const f = [ext(8, 6, 5), ext(12, 10, 9), ext(16, 14, 13), ext(20, 18, 17)];
   const n = f.filter(Boolean).length;
-  const pinchI = dist(h[4], h[8]) / palm;
-  const pinchM = dist(h[4], h[12]) / palm;
-  let g = "point";
-  if (pinchI < (pinch ? 0.42 : 0.3)) g = "pinch";
-  else if (pinchM < 0.3 && f[0]) g = "rpinch";
-  else if (n === 0 && !thumb) g = "fist";
-  else if (n === 0 && thumb && h[4].y < h[3].y && h[4].y < h[5].y - palm * 0.3) g = "thumb";
-  else if (n === 4 && thumb) g = "palm";
-  else if (f[0] && f[1] && f[2] && !f[3]) g = "three";
-  else if (f[0] && f[1] && !f[2] && !f[3]) g = "vee";
-  else if (f[0] && !f[1]) g = "point";
-  else g = "other";
-  return g;
+  const thumbOut = dist(h[4], h[9]) / palm > 0.85;                  // pouce écarté de la paume
+  const thumbUp = thumbOut && h[4].y < h[2].y - palm * 0.35 && h[4].y < h[6].y;
+  const pI = dist(h[4], h[8]) / palm, pM = dist(h[4], h[12]) / palm;
+  if (pI < (gesture === "pinch" ? 0.45 : 0.32) && !f[2]) return "pinch";
+  if (pM < 0.3 && pI > 0.45) return "rpinch";
+  if (n === 0) return thumbUp ? "thumb" : "fist";
+  if (n === 4) return thumbOut ? "palm" : "four";
+  if (f[0] && f[1] && f[2] && !f[3]) return "three";
+  if (f[0] && f[1] && !f[2] && !f[3]) return "vee";
+  if (f[0] && !f[1] && !f[2]) return "point";
+  return "other";
+}
+// vote sur les 5 dernières images : un geste doit être vu 3 fois pour compter (anti-tremblement)
+function stable(g) {
+  votes.push(g); if (votes.length > 5) votes.shift();
+  const c = {}; for (const v of votes) c[v] = (c[v] || 0) + 1;
+  const [best, k] = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+  if (k >= 3) gesture = best;
+  return gesture;
 }
 
-const LABEL = { pinch: "CLIC", rpinch: "CLIC DROIT", fist: "STOP", thumb: "PAUSE", palm: "", three: "ALT+TAB", vee: "DÉFILER", point: "", other: "" };
-
-// ---------- Actions (HUD ou PC) ----------
+// ---------- Actions ----------
 function act(a, extra = {}) {
   const X = sx * innerWidth, Y = sy * innerHeight;
   flash(a);
-  if (a === "stop") {
-    window.jarvis.hush?.();
-    send({ action: "stop" });
-    window.jarvis.line("✊ Stop.", "log");
-    return;
-  }
+  if (a === "stop") { window.jarvis.hush?.(); send({ action: "stop" }); window.jarvis.line("✊ Stop.", "log"); return; }
   if (a === "listen") { document.getElementById("btn-mic")?.click(); return; }
   if (a === "playpause") { send({ action: "hotkey", keys: "playpause" }); return; }
   if (mode === "hud") {
     if (a === "click") {
       const el = document.elementFromPoint(X, Y);
-      (el?.closest("button,input,textarea,select,a,.pill") || el)?.click?.();
-      el?.focus?.();
+      const t = el?.closest("button,input,textarea,select,a,[onclick],.pill") || el;
+      t?.click?.(); t?.focus?.();
     } else if (a === "scroll") {
       let el = document.elementFromPoint(X, Y);
       while (el && el !== document.body && !(el.scrollHeight > el.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(el).overflowY))) el = el.parentElement;
-      (el || document.scrollingElement).scrollBy({ top: -extra.amount * 60 });
-    } else if (a === "back") history.length > 1 && history.back();
+      (el && el !== document.body ? el : document.scrollingElement).scrollBy({ top: -extra.amount * 60 });
+    }
     return;
   }
-  // mode PC
-  if (a === "click" || a === "right" || a === "down" || a === "up") send({ action: a });
+  if (["click", "right", "down", "up"].includes(a)) send({ action: a });
   else if (a === "scroll") send({ action: "scroll", amount: extra.amount });
   else if (a === "back") send({ action: "hotkey", keys: "alt+left" });
   else if (a === "forward") send({ action: "hotkey", keys: "alt+right" });
   else if (a === "switch") send({ action: "hotkey", keys: "alt+tab" });
 }
-
-let flashT = 0;
 function flash(a) {
-  const txt = { click: "CLIC", right: "CLIC DROIT", down: "GLISSER", up: "DÉPOSÉ", stop: "STOP", listen: "ÉCOUTE", playpause: "PAUSE",
-    back: "◀ PRÉCÉDENT", forward: "SUIVANT ▶", switch: "ALT+TAB", scroll: "DÉFILER" }[a];
-  if (!txt) return;
-  cur.dataset.g = txt; flashT = performance.now();
-  cur.classList.remove("fire"); void cur.offsetWidth; cur.classList.add("fire");
+  const t = { click: "CLIC", right: "CLIC DROIT", down: "GLISSER", up: "DÉPOSÉ", stop: "STOP", listen: "J'ÉCOUTE", playpause: "LECTURE / PAUSE",
+    back: "◀ PRÉCÉDENT", forward: "SUIVANT ▶", switch: "ALT+TAB" }[a];
+  if (!t) return;
+  curLabel.textContent = t; flashT = performance.now();
+  ui.classList.remove("fire"); void ui.offsetWidth; ui.classList.add("fire");
+}
+function held(g, now) {
+  if (hold.g !== g) { hold = { g, t: now, fired: false }; return 0; }
+  if (hold.fired) return 1;
+  const p = (now - hold.t) / HOLD_MS[g];
+  if (p >= 1 && now - lastFire > 900) { hold.fired = true; lastFire = now; return 2; }
+  return Math.min(p, 0.99);
 }
 
-// geste à tenir (fist, thumb, palm immobile, three)
-function held(g, ms, now) {
-  if (hold.g !== g) { hold = { g, t: now, fired: false }; return false; }
-  if (!hold.fired && now - hold.t > ms && now - lastFire > 900) { hold.fired = true; lastFire = now; return true; }
-  return false;
+// ---------- Dessin ----------
+function drawView(h, g) {
+  const W = view.width, H = view.height;
+  vctx.save(); vctx.translate(W, 0); vctx.scale(-1, 1);
+  vctx.filter = "grayscale(1) brightness(1.15) contrast(1.1)";
+  vctx.drawImage(cam, 0, 0, W, H); vctx.filter = "none";
+  vctx.restore();
+  vctx.fillStyle = "rgba(0,40,60,.45)"; vctx.fillRect(0, 0, W, H);
+  if (!h) return;
+  const col = g === "fist" ? "#ff3d5a" : g === "pinch" ? "#4dffb5" : "#35e0ff";
+  const P = (p) => [(1 - p.x) * W, p.y * H];
+  vctx.shadowColor = col; vctx.shadowBlur = 10; vctx.strokeStyle = col; vctx.lineWidth = 2.5; vctx.lineCap = "round";
+  vctx.beginPath(); for (const [a, b] of BONES) { const [x1, y1] = P(h[a]), [x2, y2] = P(h[b]); vctx.moveTo(x1, y1); vctx.lineTo(x2, y2); } vctx.stroke();
+  vctx.fillStyle = "#fff";
+  for (const i of [4, 8, 12, 16, 20]) { const [x, y] = P(h[i]); vctx.beginPath(); vctx.arc(x, y, 4, 0, 7); vctx.fill(); }
+  vctx.shadowBlur = 0;
 }
 
 // ---------- Boucle ----------
 function loop() {
   if (!stream) return;
-  if (fx.width !== innerWidth) fx.width = innerWidth;
-  if (fx.height !== innerHeight) fx.height = innerHeight;
-  ctx.clearRect(0, 0, fx.width, fx.height);
+  requestAnimationFrame(loop);
+  if (cam.readyState < 2 || cam.currentTime === lastVT) return;     // pas de nouvelle image : on ne recalcule pas
+  lastVT = cam.currentTime;
   const now = performance.now();
-  const res = landmarker.detectForVideo(cam, now);
-  const h = res.landmarks?.[0];
-  if (!h) {
-    // main perdue : relâcher un glisser en cours au bout de 0,5 s
+  frames++; if (now - fpsT > 1000) { fpsEl.textContent = frames + " IPS"; frames = 0; fpsT = now; }
+
+  const raw = landmarker.detectForVideo(cam, now).landmarks?.[0];
+  if (!raw) {
+    sm = null; votes = []; gesture = "none";
     if (!lostSince) lostSince = now;
     if (pinch && now - lostSince > 500) { if (pinch.drag) act("up"); pinch = null; }
     hold.g = ""; scrollY = null; palmTrail = [];
-    requestAnimationFrame(loop); return;
+    say(now - seenAt > 2500 ? "Aucune main — lève la main face caméra, à 40-80 cm, bien éclairée" : "");
+    drawView(null); paint("none", 0); return;
   }
-  lostSince = 0;
-  const W = fx.width, H = fx.height, P = (p) => [(1 - p.x) * W, p.y * H];
-  const g = read(h);
+  lostSince = 0; seenAt = now; say("");
+  // lissage des repères (moins de tremblements, réactif sur les grands gestes)
+  if (!sm) sm = raw.map((p) => ({ ...p }));
+  else for (let i = 0; i < 21; i++) {
+    const k = Math.min(0.85, 0.4 + Math.hypot(raw[i].x - sm[i].x, raw[i].y - sm[i].y) * 12);
+    sm[i].x += (raw[i].x - sm[i].x) * k; sm[i].y += (raw[i].y - sm[i].y) * k; sm[i].z = raw[i].z;
+  }
+  const h = sm, g = stable(classify(h));
+  drawView(h, g);
 
-  // Hologramme de la main (os + articulations)
-  ctx.strokeStyle = g === "fist" ? "rgba(255,90,90,.7)" : "rgba(62,230,255,.45)"; ctx.lineWidth = 2;
-  ctx.beginPath(); for (const [a, b] of BONES) { const [x1, y1] = P(h[a]), [x2, y2] = P(h[b]); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); } ctx.stroke();
-  ctx.fillStyle = "rgba(62,230,255,.8)";
-  for (const p of h) { const [x, y] = P(p); ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill(); }
-
-  // Curseur : suit l'index en pointage / pince (pas pendant les autres gestes → pas de saut)
+  // Curseur (bouge seulement en pointage / pince : pas de saut pendant les autres gestes)
   if (g === "point" || g === "pinch" || g === "rpinch") {
-    const ref = g === "pinch" ? { x: (h[4].x + h[8].x) / 2, y: (h[4].y + h[8].y) / 2 } : h[8];
-    const tx = Math.min(1, Math.max(0, ((1 - ref.x) - 0.15) / 0.7));
-    const ty = Math.min(1, Math.max(0, (ref.y - 0.15) / 0.6));
-    const k = Math.hypot(tx - sx, ty - sy) > 0.05 ? 0.5 : 0.25;      // rapide si grand geste, stable sinon
+    const ref = g === "point" ? h[8] : { x: (h[4].x + h[8].x) / 2, y: (h[4].y + h[8].y) / 2 };
+    const tx = Math.min(1, Math.max(0, ((1 - ref.x) - 0.2) / 0.6));
+    const ty = Math.min(1, Math.max(0, (ref.y - 0.15) / 0.55));
+    const k = Math.hypot(tx - sx, ty - sy) > 0.04 ? 0.55 : 0.3;
     sx += (tx - sx) * k; sy += (ty - sy) * k;
   }
-  cur.style.left = sx * innerWidth + "px"; cur.style.top = sy * innerHeight + "px";
 
-  // Pince pouce-index : clic court / glisser si tenu
+  // Pince : clic court / glisser si tenu
   if (g === "pinch") {
-    if (!pinch) pinch = { t: now, x: sx, y: sy, drag: false };
-    else if (!pinch.drag && now - pinch.t > 350) { pinch.drag = true; act("down"); }
-  } else if (pinch) {
-    if (pinch.drag) act("up"); else act("click");
-    pinch = null;
-  }
-  cur.classList.toggle("pinch", !!pinch);
-  cur.classList.toggle("drag", !!pinch?.drag);
+    if (!pinch) pinch = { t: now, drag: false };
+    else if (!pinch.drag && now - pinch.t > 400) { pinch.drag = true; act("down"); }
+  } else if (pinch) { act(pinch.drag ? "up" : "click"); pinch = null; }
 
-  // Clic droit
-  if (g === "rpinch" && !rpinch && now - lastFire > 500) { rpinch = true; lastFire = now; act("right"); }
+  if (g === "rpinch" && !rpinch && now - lastFire > 600) { rpinch = true; lastFire = now; act("right"); }
   if (g !== "rpinch") rpinch = false;
 
-  // Défilement à deux doigts
+  // Défilement deux doigts
   if (g === "vee") {
     const y = (h[8].y + h[12].y) / 2;
-    if (scrollY != null) {
-      scrollAcc += (scrollY - y) * 40;            // main qui monte = remonter
-      const step = Math.trunc(scrollAcc);
-      if (step) { scrollAcc -= step; act("scroll", { amount: step }); }
-    }
+    if (scrollY != null) { scrollAcc += (scrollY - y) * 45; const s = Math.trunc(scrollAcc); if (s) { scrollAcc -= s; act("scroll", { amount: s }); } }
     scrollY = y;
   } else { scrollY = null; scrollAcc = 0; }
 
-  // Main ouverte : balayage ou immobilité
+  // Gestes tenus + balayage
+  let prog = 0;
   if (g === "palm") {
     const wx = 1 - h[9].x;
-    palmTrail.push([now, wx, h[9].y]);
-    while (palmTrail.length && now - palmTrail[0][0] > 400) palmTrail.shift();
+    palmTrail.push([now, wx]); while (now - palmTrail[0][0] > 450) palmTrail.shift();
     const dx = wx - palmTrail[0][1];
-    if (Math.abs(dx) > 0.22 && now - lastFire > 900) {
-      lastFire = now; palmTrail = []; hold.fired = true;
-      act(dx > 0 ? "forward" : "back");
-    } else {
-      const span = Math.max(...palmTrail.map((p) => p[1])) - Math.min(...palmTrail.map((p) => p[1]));
-      if (span < 0.04 && held("palm", 1200, now)) act("listen");
-      else if (span >= 0.04) hold.t = now;
+    if (Math.abs(dx) > 0.2 && now - lastFire > 900) { lastFire = now; palmTrail = []; hold = { g: "palm", t: now, fired: true }; act(dx > 0 ? "forward" : "back"); }
+    else {
+      const xs = palmTrail.map((p) => p[1]);
+      if (Math.max(...xs) - Math.min(...xs) > 0.05) hold = { g: "palm", t: now, fired: false };
+      const r = held("palm", now); if (r === 2) act("listen"); else prog = r;
     }
-  } else palmTrail = [];
+  } else { palmTrail = []; }
+  if (g === "fist" || g === "thumb" || g === "three") {
+    const r = held(g, now);
+    if (r === 2) act({ fist: "stop", thumb: "playpause", three: "switch" }[g]); else prog = r;
+  } else if (g !== "palm") hold.g = g;
 
-  // Gestes tenus
-  if (g === "fist") { if (held("fist", 500, now)) act("stop"); }
-  else if (g === "thumb") { if (held("thumb", 700, now)) act("playpause"); }
-  else if (g === "three") { if (held("three", 700, now)) act("switch"); }
-  else if (g !== "palm") hold.g = g;
+  paint(g, prog);
+  if (mode === "pc" && (g === "point" || g === "pinch" || g === "rpinch") && now - lastSend > 40) { lastSend = now; send({ action: "move" }); }
+}
 
-  // Étiquette du geste
-  if (now - flashT > 700) cur.dataset.g = LABEL[g] || "";
-
-  // Mouvement de la souris du PC (~25 fois / s)
-  if (mode === "pc" && (g === "point" || g === "pinch" || g === "rpinch") && now - lastSend > 40) {
-    lastSend = now; send({ action: "move" });
-  }
-  requestAnimationFrame(loop);
+function paint(g, prog) {
+  cur.style.transform = `translate(${sx * innerWidth}px,${sy * innerHeight}px)`;
+  cur.className = "g-" + g + (pinch ? " pinch" : "") + (pinch?.drag ? " drag" : "") + (performance.now() - flashT < 500 ? " fire" : "");
+  ring.style.strokeDashoffset = 100 - (prog >= 1 ? 0 : prog * 100);
+  if (performance.now() - flashT > 800) curLabel.textContent = prog > 0.05 && prog < 1 ? (GESTES.find((x) => x[0] === g)?.[2] || "").toUpperCase() : "";
+  for (const k in chips) chips[k].classList.toggle("on", k === g);
+  ui.querySelector(".hu-dot").classList.toggle("live", g !== "none");
 }

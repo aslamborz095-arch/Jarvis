@@ -424,8 +424,24 @@ def pointer(request: Request, p: Pointer, x_jarvis_token: str = Header("")):
 
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
+def fetch_hand_model():
+    """Télécharge une fois le modèle de suivi des mains pour un usage hors ligne."""
+    dst = BASE / "static" / "vendor" / "mediapipe" / "hand_landmarker.task"
+    if dst.exists() and dst.stat().st_size > 1_000_000:
+        return
+    try:
+        import httpx
+        r = httpx.get("https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                      timeout=60, follow_redirects=True)
+        if r.status_code == 200 and len(r.content) > 1_000_000:
+            dst.write_bytes(r.content)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    import uvicorn
+    import uvicorn, threading
+    threading.Thread(target=fetch_hand_model, daemon=True).start()
     if os.getenv("AUTO_UPDATE", "true").lower() == "true":
         updater.start_background()
     brain.warmup()
