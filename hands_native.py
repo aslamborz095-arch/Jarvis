@@ -121,8 +121,35 @@ def _run():
         cam.release(); cam = None
     if cam is None:
         raise RuntimeError("aucune caméra disponible (fermée ailleurs ?)")
-    cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640); cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # Optimisations : MJPG (décodage léger), 320×240 (le modèle travaille en 192/224 px de toute façon),
+    # tampon d'1 image (pas de retard accumulé)
+    cv2.setNumThreads(1)
+    cam.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cam.set(cv2.CAP_PROP_FRAME_WIDTH, 320); cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cam.set(cv2.CAP_PROP_FPS, 30); cam.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     W, H = pyautogui.size()
+    # Curseur fluide : un fil dédié déplace la souris à ~120 Hz vers la cible donnée par la caméra
+    target = {"x": None, "y": None}
+    try:
+        import ctypes
+        _setpos = ctypes.windll.user32.SetCursorPos
+    except Exception:
+        _setpos = lambda x, y: pyautogui.moveTo(x, y)
+
+    def mover():
+        cx = cy = None
+        while not _stop.is_set():
+            tx, ty = target["x"], target["y"]
+            if tx is not None:
+                if cx is None:
+                    cx, cy = tx, ty
+                d = math.hypot(tx - cx, ty - cy)
+                k = 0.18 if d < 0.01 else 0.32          # stable de près, rapide sur les grands gestes
+                cx += (tx - cx) * k; cy += (ty - cy) * k
+                if d > 0.0008:
+                    _setpos(int(cx * (W - 1)), int(cy * (H - 1)))
+            time.sleep(0.008)
+    threading.Thread(target=mover, daemon=True).start()
     badge = Badge()
     sx = sy = 0.5
     sm, votes, gesture = None, [], "none"
@@ -163,6 +190,8 @@ def _run():
             if not ok:
                 time.sleep(0.05); continue
             now = time.time()
+            if lost and now - lost > 4:      # personne devant la caméra : 4 analyses/s seulement (économie CPU)
+                time.sleep(0.2)
             frames += 1
             if now - fps_t >= 1:
                 STATE["fps"], frames, fps_t = frames, 0, now
@@ -172,6 +201,7 @@ def _run():
             if raw is None:
                 sm, votes, gesture = None, [], "none"
                 lost = lost or now
+                target["x"] = None
                 if pinch and now - lost > 0.5:
                     if pinch["drag"]:
                         act("up")
@@ -185,12 +215,13 @@ def _run():
                 sm = [[p.x, p.y] for p in raw]
             else:
                 for i, p in enumerate(raw):
-                    k = min(0.85, 0.4 + math.hypot(p.x - sm[i][0], p.y - sm[i][1]) * 12)
+                    k = min(0.9, (0.4 if STATE["fps"] >= 15 else 0.65) + math.hypot(p.x - sm[i][0], p.y - sm[i][1]) * 12)
                     sm[i][0] += (p.x - sm[i][0]) * k; sm[i][1] += (p.y - sm[i][1]) * k
             h = [type("P", (), {"x": a, "y": b}) for a, b in sm]
-            votes = (votes + [classify(h, gesture)])[-5:]
+            n_v = 5 if STATE["fps"] >= 15 else 3            # moins d'images à voter quand le PC est lent
+            votes = (votes + [classify(h, gesture)])[-n_v:]
             best = max(set(votes), key=votes.count)
-            if votes.count(best) >= 3:
+            if votes.count(best) >= (n_v // 2 + 1):
                 gesture = best
             g = gesture
             STATE["gesture"] = g
@@ -198,9 +229,8 @@ def _run():
             if g in ("point", "pinch", "rpinch"):
                 ref = h[8] if g == "point" else type("P", (), {"x": (h[4].x + h[8].x) / 2, "y": (h[4].y + h[8].y) / 2})
                 tx = min(1, max(0, ((1 - ref.x) - 0.2) / 0.6)); ty = min(1, max(0, (ref.y - 0.15) / 0.55))
-                k = 0.55 if math.hypot(tx - sx, ty - sy) > 0.04 else 0.3
-                sx += (tx - sx) * k; sy += (ty - sy) * k
-                pyautogui.moveTo(int(sx * (W - 1)), int(sy * (H - 1)))
+                sx, sy = tx, ty
+                target["x"], target["y"] = tx, ty
 
             if g == "pinch":
                 if not pinch:

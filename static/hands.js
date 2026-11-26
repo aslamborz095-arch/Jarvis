@@ -37,7 +37,7 @@ let sm = null;                    // repères lissés
 let votes = [], gesture = "none";
 let pinch = null, rpinch = false, hold = { g: "", t: 0, fired: false };
 let lastFire = 0, palmTrail = [], scrollY = null, scrollAcc = 0, lostSince = 0, seenAt = 0;
-let frames = 0, fpsT = 0, flashT = 0;
+let frames = 0, fpsT = 0, flashT = 0, tgt = null, fpsNow = 30, lastDet = 0;
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const send = (body) => window.jarvis.api("/api/pointer", { method: "POST", body: JSON.stringify({ x: sx, y: sy, ...body }) }).catch(() => {});
@@ -57,7 +57,7 @@ async function start() {
   try {
     ui.hidden = false; say("Initialisation…");
     landmarker ||= await load();
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 }, facingMode: "user" } });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 }, facingMode: "user" } });
     cam.srcObject = stream; await cam.play();
     cur.hidden = false; seenAt = performance.now(); requestAnimationFrame(loop);
     window.jarvis.line(mode === "pc" ? "Mains → souris du PC." : "Mains → interface Jarvis.", "log");
@@ -130,10 +130,11 @@ function classify(h) {
 }
 // vote sur les 5 dernières images : un geste doit être vu 3 fois pour compter (anti-tremblement)
 function stable(g) {
-  votes.push(g); if (votes.length > 5) votes.shift();
+  const nv = fpsNow >= 15 ? 5 : 3;
+  votes.push(g); while (votes.length > nv) votes.shift();
   const c = {}; for (const v of votes) c[v] = (c[v] || 0) + 1;
   const [best, k] = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
-  if (k >= 3) gesture = best;
+  if (k >= (nv >> 1) + 1) gesture = best;
   return gesture;
 }
 
@@ -199,14 +200,22 @@ function drawView(h, g) {
 function loop() {
   if (!stream) return;
   requestAnimationFrame(loop);
+  // curseur interpolé à chaque image d'écran (fluide même si la caméra est lente)
+  if (tgt) {
+    const d = Math.hypot(tgt.x - sx, tgt.y - sy), k = d < 0.01 ? 0.18 : 0.32;
+    sx += (tgt.x - sx) * k; sy += (tgt.y - sy) * k;
+    cur.style.transform = `translate(${sx * innerWidth}px,${sy * innerHeight}px)`;
+  }
   if (cam.readyState < 2 || cam.currentTime === lastVT) return;     // pas de nouvelle image : on ne recalcule pas
   lastVT = cam.currentTime;
   const now = performance.now();
-  frames++; if (now - fpsT > 1000) { fpsEl.textContent = frames + " IPS"; frames = 0; fpsT = now; }
+  frames++; if (now - fpsT > 1000) { fpsEl.textContent = frames + " IPS"; fpsNow = frames; frames = 0; fpsT = now; }
 
+  if (lostSince && now - lostSince > 4000 && now - lastDet < 250) return;   // personne : 4 analyses/s (économie CPU)
+  lastDet = now;
   const raw = landmarker.detectForVideo(cam, now).landmarks?.[0];
   if (!raw) {
-    sm = null; votes = []; gesture = "none";
+    sm = null; votes = []; gesture = "none"; tgt = null;
     if (!lostSince) lostSince = now;
     if (pinch && now - lostSince > 500) { if (pinch.drag) act("up"); pinch = null; }
     hold.g = ""; scrollY = null; palmTrail = [];
@@ -228,8 +237,7 @@ function loop() {
     const ref = g === "point" ? h[8] : { x: (h[4].x + h[8].x) / 2, y: (h[4].y + h[8].y) / 2 };
     const tx = Math.min(1, Math.max(0, ((1 - ref.x) - 0.2) / 0.6));
     const ty = Math.min(1, Math.max(0, (ref.y - 0.15) / 0.55));
-    const k = Math.hypot(tx - sx, ty - sy) > 0.04 ? 0.55 : 0.3;
-    sx += (tx - sx) * k; sy += (ty - sy) * k;
+    tgt = { x: tx, y: ty };
   }
 
   // Pince : clic court / glisser si tenu
