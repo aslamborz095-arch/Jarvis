@@ -202,3 +202,6 @@ body.wallpaper main{justify-content:center;padding-top:0}
 body.wallpaper #reactor{width:min(70vw,44vh)}
 body.wallpaper #say{font-size:clamp(17px,2.4vw,22px)}
 body.wallpaper .clock{grid-column:1/-1!important;grid-row:1!important;text-align:center!important}
+
+.evo-btn{margin:4px 6px 0 0;padding:3px 10px;background:transparent;border:1px solid #39f3ff;color:#39f3ff;border-radius:4px;font:inherit;font-size:.8em;letter-spacing:.1em;cursor:pointer}
+.evo-btn:hover{background:#39f3ff22;box-shadow:0 0 8px #39f3ff}

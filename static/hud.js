@@ -185,6 +185,21 @@ function line(text, cls = "") {
   while ($("feed").children.length > 40) $("feed").firstChild.remove();
   $("feed").scrollTop = 1e9;
 }
+function evolveCard(e) {
+  const el = document.createElement("div");
+  el.className = "line log evolve"; el.dataset.who = "ÉVOLUTION";
+  el.textContent = "🧬 Amélioration testée et prête : " + e.text + " ";
+  for (const [lab, ok] of [["ACTIVER", true], ["ÉCARTER", false]]) {
+    const b = document.createElement("button"); b.textContent = lab; b.className = "evo-btn";
+    b.onclick = async () => {
+      el.querySelectorAll("button").forEach(x => x.remove());
+      try { const r = await api("/api/evolution/apply", { method: "POST", body: JSON.stringify({ name: e.name, approve: ok }) }); el.append(" → " + r.reply); }
+      catch { el.append(" → échec"); }
+    };
+    el.appendChild(b);
+  }
+  $("feed").appendChild(el); $("feed").scrollTop = 1e9;
+}
 const LABELS = { listening: "J'ÉCOUTE", thinking: "ANALYSE", speaking: "RÉPONSE", "": "EN VEILLE" };
 function setState(s, label) {
   document.body.classList.remove("listening", "thinking", "speaking");
@@ -483,6 +498,7 @@ async function pollEvents() {
       if (e.type === "user") line(e.text, "user");
       if (e.type === "reply" || e.type === "confirm") handle(e.res, false);
       if (e.type === "reminder") { line("⏰ Rappel : " + e.text); typeOut("⏰ " + e.text); }
+      if (e.type === "evolve") evolveCard(e);
       if (e.type === "idea") line("💡 Idée de nouvelle compétence : " + e.text + " — dites « crée cette compétence » pour que je l'apprenne.", "log");
     }
   } catch {}

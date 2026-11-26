@@ -120,6 +120,34 @@ def autopilot_stop(request: Request, x_jarvis_token: str = Header("")):
     return {"reply": __import__("autopilot").screen_stop()}
 
 
+class EvoIn(BaseModel):
+    name: str = ""
+    approve: bool = True
+
+
+@app.get("/api/evolution")
+def evolution(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import evolve
+    return {"state": evolve.STATE, "pending": [{k: v for k, v in p.items() if k != "code"} for p in evolve.pending()],
+            "journal": evolve._read(evolve.JOURNAL, [])[-20:]}
+
+
+@app.post("/api/evolution/run")
+def evolution_run(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import evolve, threading
+    threading.Thread(target=evolve.evolve_now, daemon=True).start()
+    return {"ok": True}
+
+
+@app.post("/api/evolution/apply")
+def evolution_apply(e: EvoIn, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import evolve
+    return {"reply": evolve.evolution_apply(e.name) if e.approve else evolve.evolution_reject(e.name)}
+
+
 @app.get("/api/events")
 def events(request: Request, after: int = 0, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
@@ -470,6 +498,8 @@ if __name__ == "__main__":
     import memory_ext, proactive
     memory_ext.start_background()
     proactive.start()
+    import evolve
+    evolve.start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))

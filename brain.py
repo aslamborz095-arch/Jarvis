@@ -116,6 +116,7 @@ def system_prompt():
         "Tu apprends en continu : recall pour chercher dans ta mémoire longue ; si une tâche revient souvent ou qu'il te manque un outil, "
         "propose puis crée une compétence avec create_skill (l'utilisateur la valide). "
         "Tu as des yeux : screen_look (écran du PC) et phone_look (écran du téléphone) quand il faut voir une image, une vidéo ou une interface. "
+        "Auto-évolution : toutes les 6 h tu analyses tes échecs et crées/testes seul des compétences ; evolve_now lance un cycle, evolution_report montre ce qui attend, evolution_apply active (validation de l'utilisateur). "
         "Autonomie PC : pour toute tâche dans une interface sans outil direct (appli, site, réglages, formulaire), appelle screen_task avec le but complet ; il pilote l'écran seul jusqu'au bout. screen_stop l'arrête. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
@@ -130,6 +131,8 @@ GROUPS = {
                lambda n: n.startswith(("gmail_", "calendar_"))),
     "media": (("musique", "spotify", "chanson", "volume", "pause", "lecture", "suivant", "precedent", "morceau", "titre", "artiste", "playlist", "son "),
               lambda n: n in ("media_control", "music_search")),
+    "evolve": (("evolu", "amelior", "ameliore", "competence", "apprend", "progress"),
+               lambda n: n.startswith("evol")),
 }
 
 

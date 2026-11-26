@@ -164,11 +164,11 @@ SPECS = [
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
 
-import phone, vision, google_apps, media, learning, proactive, autopilot, hands_native
-SPECS += hands_native.SPECS + phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS
-for m in (hands_native, phone, vision, autopilot, google_apps, media, learning, proactive):
+import phone, vision, google_apps, media, learning, proactive, autopilot, hands_native, evolve
+SPECS += hands_native.SPECS + phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS + evolve.SPECS
+for m in (hands_native, phone, vision, autopilot, google_apps, media, learning, proactive, evolve):
     FUNCS.update(m.FUNCS)
-DANGEROUS |= google_apps.DANGEROUS | learning.DANGEROUS | autopilot.DANGEROUS
+DANGEROUS |= google_apps.DANGEROUS | learning.DANGEROUS | autopilot.DANGEROUS | evolve.DANGEROUS
 learning.load_skills()   # compétences écrites par Jarvis
 
 
@@ -188,6 +188,11 @@ def execute(name, args):
         f = FUNCS[name]
         ok = inspect.signature(f).parameters
         args = {k: v for k, v in (args or {}).items() if k in ok}   # ignore les arguments inventés
-        return str(f(**args))
+        out = str(f(**args))
+        if name.startswith("skill_") and out.lower().startswith("erreur"):
+            evolve.record_error(name, out)
+        return out
     except Exception as e:
+        if name.startswith("skill_"):
+            evolve.record_error(name, f"{type(e).__name__} : {e}")
         return f"Erreur {type(e).__name__} : {e}"
