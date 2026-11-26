@@ -164,9 +164,9 @@ SPECS = [
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
 
-import phone, vision, google_apps, media, learning, proactive, autopilot
-SPECS += phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS
-for m in (phone, vision, autopilot, google_apps, media, learning, proactive):
+import phone, vision, google_apps, media, learning, proactive, autopilot, hands_native
+SPECS += hands_native.SPECS + phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS
+for m in (hands_native, phone, vision, autopilot, google_apps, media, learning, proactive):
     FUNCS.update(m.FUNCS)
 DANGEROUS |= google_apps.DANGEROUS | learning.DANGEROUS | autopilot.DANGEROUS
 learning.load_skills()   # compétences écrites par Jarvis

@@ -197,6 +197,10 @@ def _run():
             STATE["level"] = round(max(STATE["level"] * 0.9, r))
             score = max(model.predict(c).values())
             STATE["score"] = round(max(STATE["score"] * 0.95, float(score)), 2)
+            if STATE.pop("force", False) and not STATE["busy"]:   # geste main ouverte = écoute
+                _handle(q, noise)
+                model.reset(); burst, quiet = [], 0
+                continue
             if time.time() < STATE.get("quiet_until", 0):
                 burst, quiet = [], 0
                 continue

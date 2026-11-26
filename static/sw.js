@@ -1,5 +1,5 @@
 // Jarvis : l'interface s'ouvre même quand le PC est éteint (mode autonome du téléphone)
-const CACHE = "jarvis-v3";
+const CACHE = "jarvis-v4";
 const SHELL = ["/", "/static/hud.css", "/static/hud.js", "/static/fx.js", "/static/hands.js", "/static/manifest.json",
   "/static/icon.svg", "/static/fonts/orbitron-latin-500-normal.woff2", "/static/fonts/orbitron-latin-700-normal.woff2",
   "/static/fonts/orbitron-latin-900-normal.woff2", "/static/fonts/rajdhani-latin-500-normal.woff2",

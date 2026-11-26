@@ -392,6 +392,9 @@ def pointer(request: Request, p: Pointer, x_jarvis_token: str = Header("")):
     """Contrôle du PC par les gestes des mains (caméra)."""
     auth(x_jarvis_token, request)
     a = p.action or ("click" if p.click else "move")
+    import hands_native
+    if hands_native.STATE["running"] and a != "stop":
+        return {"ok": True, "native": True}   # la caméra du PC pilote déjà la souris
     if a == "stop":
         import autopilot
         autopilot.screen_stop()
@@ -422,26 +425,31 @@ def pointer(request: Request, p: Pointer, x_jarvis_token: str = Header("")):
     return {"ok": True}
 
 
+class Hands(BaseModel):
+    on: bool
+
+
+@app.get("/api/hands")
+def hands_status(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import hands_native
+    return hands_native.STATE
+
+
+@app.post("/api/hands")
+def hands_set(request: Request, p: Hands, x_jarvis_token: str = Header("")):
+    """Contrôle de tout Windows par la caméra du PC (marche fenêtre Jarvis fermée)."""
+    auth(x_jarvis_token, request)
+    import hands_native
+    return {"reply": hands_native.hand_control(p.on), **hands_native.STATE}
+
+
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
-
-def fetch_hand_model():
-    """Télécharge une fois le modèle de suivi des mains pour un usage hors ligne."""
-    dst = BASE / "static" / "vendor" / "mediapipe" / "hand_landmarker.task"
-    if dst.exists() and dst.stat().st_size > 1_000_000:
-        return
-    try:
-        import httpx
-        r = httpx.get("https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-                      timeout=60, follow_redirects=True)
-        if r.status_code == 200 and len(r.content) > 1_000_000:
-            dst.write_bytes(r.content)
-    except Exception:
-        pass
-
 
 if __name__ == "__main__":
     import uvicorn, threading
-    threading.Thread(target=fetch_hand_model, daemon=True).start()
+    import hands_native
+    threading.Thread(target=hands_native.fetch_model, daemon=True).start()
     if os.getenv("AUTO_UPDATE", "true").lower() == "true":
         updater.start_background()
     brain.warmup()

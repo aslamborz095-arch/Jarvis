@@ -69,12 +69,42 @@ function stop() {
   stream?.getTracks().forEach((t) => t.stop()); stream = null;
   cur.hidden = true; ui.hidden = true;
 }
-function setMode(m) {
-  if (pinch?.drag && mode === "pc") send({ action: "up" });
+let poll = null;
+async function setMode(m) {
+  const was = mode;
+  if (pinch?.drag) send({ action: "up" });
   mode = m; btn.classList.toggle("on", m !== "off");
   btn.textContent = m === "pc" ? "🖱" : "✋";
-  modeEl.textContent = m === "pc" ? "MAINS · PC" : "MAINS · INTERFACE";
+  modeEl.textContent = m === "pc" ? "MAINS · TOUT LE PC" : "MAINS · INTERFACE";
   ui.classList.toggle("pc", m === "pc");
+  if (m === "pc") {
+    // Mode PC : la caméra est pilotée par le serveur → marche sur tout Windows, Jarvis réduit ou fermé
+    stop(); ui.hidden = false; say("Démarrage de la caméra du PC…");
+    const ctx2 = view.getContext("2d"); ctx2.fillStyle = "#02101a"; ctx2.fillRect(0, 0, view.width, view.height);
+    try {
+      const r = await window.jarvis.api("/api/hands", { method: "POST", body: JSON.stringify({ on: true }) });
+      window.jarvis.line(r.reply, "log");
+      if (r.error) throw new Error(r.error);
+      say("Actif sur tout le PC — tu peux réduire Jarvis. Voyant en bas à droite de l'écran.");
+      poll = setInterval(async () => {
+        try {
+          const st = await window.jarvis.api("/api/hands");
+          fpsEl.textContent = st.fps + " IPS";
+          for (const k in chips) chips[k].classList.toggle("on", k === st.gesture);
+          ui.querySelector(".hu-dot").classList.toggle("live", st.running && st.gesture !== "none");
+          if (!st.running) { say("Arrêté : " + (st.error || "")); clearInterval(poll); }
+        } catch {}
+      }, 400);
+    } catch (e) {
+      say("Mode PC indisponible : " + e.message + " — repli sur le mode navigateur.");
+      if (!stream) start();
+    }
+    return;
+  }
+  if (was === "pc") {
+    clearInterval(poll);
+    await window.jarvis.api("/api/hands", { method: "POST", body: JSON.stringify({ on: false }) }).catch(() => {});
+  }
   if (m === "off") stop(); else if (!stream) start();
 }
 btn.onclick = () => setMode(MODES[(MODES.indexOf(mode) + 1) % 3]);
@@ -86,11 +116,11 @@ function classify(h) {
   const ext = (tip, pip, mcp) => dist(h[tip], h[0]) > dist(h[pip], h[0]) * 1.08 && dist(h[tip], h[mcp]) / palm > 0.55;
   const f = [ext(8, 6, 5), ext(12, 10, 9), ext(16, 14, 13), ext(20, 18, 17)];
   const n = f.filter(Boolean).length;
-  const thumbOut = dist(h[4], h[9]) / palm > 0.85;                  // pouce écarté de la paume
+  const thumbOut = dist(h[4], h[9]) / palm > 0.65 && dist(h[4], h[2]) / palm > 0.5;   // pouce écarté de la paume
   const thumbUp = thumbOut && h[4].y < h[2].y - palm * 0.35 && h[4].y < h[6].y;
   const pI = dist(h[4], h[8]) / palm, pM = dist(h[4], h[12]) / palm;
-  if (pI < (gesture === "pinch" ? 0.45 : 0.32) && !f[2]) return "pinch";
-  if (pM < 0.3 && pI > 0.45) return "rpinch";
+  if (pI < (gesture === "pinch" ? 0.45 : 0.32) && !f[2] && dist(h[8], h[5]) / palm > 0.45) return "pinch";
+  if (pM < 0.3 && pI > 0.45 && f[0] && dist(h[12], h[9]) / palm > 0.5) return "rpinch";
   if (n === 0) return thumbUp ? "thumb" : "fist";
   if (n === 4) return thumbOut ? "palm" : "four";
   if (f[0] && f[1] && f[2] && !f[3]) return "three";

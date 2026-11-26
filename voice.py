@@ -143,4 +143,18 @@ def speak_local(text):
         env, script = {**os.environ, "JARVIS_MP3": str(f)}, PS_PLAY
     else:
         env, script = {**os.environ, "JARVIS_SAY": text[:1500]}, PS_SAY
-    subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, creationflags=0x08000000, timeout=180)
+    global _PLAY
+    _PLAY = subprocess.Popen(["powershell", "-NoProfile", "-Command", script], env=env, creationflags=0x08000000)
+    try:
+        _PLAY.wait(timeout=180)
+    except Exception:
+        _PLAY.kill()
+
+
+_PLAY = None
+
+
+def stop_local():
+    """Coupe la voix en cours sur le PC (geste poing)."""
+    if _PLAY and _PLAY.poll() is None:
+        _PLAY.kill()
