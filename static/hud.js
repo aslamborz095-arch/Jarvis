@@ -489,7 +489,11 @@ async function pollEvents() {
 }
 setInterval(pollEvents, 1500); pollEvents();
 
-window.jarvis = { send, line, api, speak };
+function hush() {
+  window.speechSynthesis?.cancel(); player?.pause(); window.JarvisAndroid?.stopSpeak?.();
+  setState("");
+}
+window.jarvis = { send, line, api, speak, hush };
 
 // ---------- Briefing à la première ouverture de la journée ----------
 setTimeout(async () => {

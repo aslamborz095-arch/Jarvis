@@ -49,6 +49,9 @@ class Pointer(BaseModel):
     x: float          # 0..1
     y: float          # 0..1
     click: bool = False
+    action: str = ""  # move, click, right, down, up, scroll, hotkey, stop
+    amount: int = 0
+    keys: str = ""
 
 
 @app.get("/")
@@ -380,16 +383,42 @@ def phone_link(p: Pair, request: Request, x_jarvis_token: str = Header("")):
     return {"output": out, **phone.status()}
 
 
+HAND_KEYS = {"alt+tab": ("alt", "tab"), "alt+left": ("alt", "left"), "alt+right": ("alt", "right"),
+             "win+tab": ("win", "tab"), "win+d": ("win", "d"), "esc": ("esc",), "playpause": ("playpause",)}
+
+
 @app.post("/api/pointer")
 def pointer(request: Request, p: Pointer, x_jarvis_token: str = Header("")):
-    """Contrôle de la souris du PC par les mains (caméra)."""
+    """Contrôle du PC par les gestes des mains (caméra)."""
     auth(x_jarvis_token, request)
+    a = p.action or ("click" if p.click else "move")
+    if a == "stop":
+        import autopilot
+        autopilot.screen_stop()
+        return {"ok": True}
     import pyautogui
     pyautogui.FAILSAFE = False
+    pyautogui.PAUSE = 0
+    if a == "hotkey":
+        keys = HAND_KEYS.get(p.keys)
+        if not keys:
+            return {"ok": False, "error": "raccourci non autorisé"}
+        pyautogui.hotkey(*keys)
+        return {"ok": True}
     w, h = pyautogui.size()
-    pyautogui.moveTo(int(p.x * w), int(p.y * h))
-    if p.click:
+    x = int(min(1, max(0, p.x)) * (w - 1)); y = int(min(1, max(0, p.y)) * (h - 1))
+    if a == "scroll":
+        pyautogui.scroll(max(-20, min(20, p.amount)) * 60)
+        return {"ok": True}
+    pyautogui.moveTo(x, y)
+    if a == "click":
         pyautogui.click()
+    elif a == "right":
+        pyautogui.rightClick()
+    elif a == "down":
+        pyautogui.mouseDown()
+    elif a == "up":
+        pyautogui.mouseUp()
     return {"ok": True}
 
 
