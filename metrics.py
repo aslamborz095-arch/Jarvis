@@ -22,8 +22,8 @@ for k in ("tools", "brains", "roles"):
 
 def _save(force=False):
     _dirty[0] += 1
-    if not force and _dirty[0] < 10 and time.time() - _dirty[1] < 60:
-        return
+    if not force and _dirty[0] < 3 and time.time() - _dirty[1] < 15:
+        return   # fichier petit : on sauve souvent pour ne rien perdre au redémarrage
     try:
         FILE.parent.mkdir(exist_ok=True)
         FILE.write_text(json.dumps(M, ensure_ascii=False), encoding="utf-8")
