@@ -185,6 +185,21 @@ function line(text, cls = "") {
   while ($("feed").children.length > 40) $("feed").firstChild.remove();
   $("feed").scrollTop = 1e9;
 }
+function suggestCard(e) {
+  const el = document.createElement("div");
+  el.className = "line log evolve"; el.dataset.who = "ANTICIPATION";
+  el.textContent = "🎯 Je peux m'en charger : " + e.text + (e.why ? " (" + e.why + ") " : " ");
+  for (const [lab, ok] of [["LANCER", true], ["IGNORER", false]]) {
+    const b = document.createElement("button"); b.textContent = lab; b.className = "evo-btn";
+    b.onclick = async () => {
+      el.querySelectorAll("button").forEach(x => x.remove());
+      try { const r = await api("/api/suggest", { method: "POST", body: JSON.stringify({ key: e.key, approve: ok }) }); el.append(" → " + r.reply); }
+      catch { el.append(" → échec"); }
+    };
+    el.appendChild(b);
+  }
+  $("feed").appendChild(el); $("feed").scrollTop = 1e9;
+}
 function evolveCard(e) {
   const el = document.createElement("div");
   el.className = "line log evolve"; el.dataset.who = "ÉVOLUTION";
@@ -499,6 +514,7 @@ async function pollEvents() {
       if (e.type === "reply" || e.type === "confirm") handle(e.res, false);
       if (e.type === "reminder") { line("⏰ Rappel : " + e.text); typeOut("⏰ " + e.text); }
       if (e.type === "evolve") evolveCard(e);
+      if (e.type === "suggest") suggestCard(e);
       if (e.type === "mission") { line("🎯 " + e.text, "log"); typeOut("🎯 " + e.text); }
       if (e.type === "idea") line("💡 Idée de nouvelle compétence : " + e.text + " — dites « crée cette compétence » pour que je l'apprenne.", "log");
     }

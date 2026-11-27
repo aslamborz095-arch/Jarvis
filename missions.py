@@ -16,7 +16,7 @@ MAX_STEPS = 8
 # En arrière-plan, sans l'utilisateur : lecture, préparation et brouillons seulement (rien n'est envoyé ni cliqué)
 SAFE = {"web_search", "fetch_url", "recall", "read_file", "list_dir", "system_status", "gmail_read", "gmail_search",
         "gmail_draft", "calendar_list", "tasks_list", "task_add", "reminders_list", "remind", "remember", "briefing",
-        "phone_status", "phone_notifications", "performance_report"}
+        "phone_status", "phone_notifications", "performance_report", "project_recall", "project_note"}
 
 
 def _allowed():
@@ -119,6 +119,11 @@ def _worker():
                                    "simple", allowed=set())
             final = final.split("] ", 1)[-1]
             _update(mid, status="done", end=datetime.datetime.now().isoformat(timespec="minutes"), summary=final[:3000])
+            try:
+                import projects
+                projects.attach_mission(todo["goal"], final)
+            except Exception:
+                pass
             _push(id=mid, text="Mission terminée : " + final[:300])
 
 

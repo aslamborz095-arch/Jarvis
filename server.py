@@ -135,6 +135,23 @@ def evolution(request: Request, x_jarvis_token: str = Header("")):
             "journal": evolve._read(evolve.JOURNAL, [])[-20:], "metrics": __import__("metrics").summary()}
 
 
+class SuggestIn(BaseModel):
+    key: str
+    approve: bool = True
+
+
+@app.post("/api/suggest")
+def suggest(s: SuggestIn, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    return {"reply": __import__("anticipate").decide(s.key, s.approve)}
+
+
+@app.get("/api/missions")
+def missions_view(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    return {"missions": __import__("missions")._read()[-10:], "projects": __import__("projects")._read()}
+
+
 @app.get("/api/metrics")
 def metrics_view(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
@@ -509,6 +526,7 @@ if __name__ == "__main__":
     import evolve
     evolve.start()
     __import__("missions").start()
+    __import__("anticipate").start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))

@@ -10,7 +10,7 @@ import time
 
 import metrics
 
-READ_ONLY = {"web_search", "fetch_url", "recall", "read_file", "list_dir", "system_status", "skill_get_weather"}
+READ_ONLY = {"web_search", "fetch_url", "recall", "project_recall", "read_file", "list_dir", "system_status", "skill_get_weather"}
 
 ROLES = {
     "chercheur": ("simple", READ_ONLY,
