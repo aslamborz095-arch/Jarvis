@@ -380,8 +380,10 @@ def providers_add(b: Brain, request: Request, x_jarvis_token: str = Header("")):
     except providers.ProviderError as e:
         if e.status in (401, 403):
             why = re.sub(r"\s+", " ", str(e))[-220:]
+            print(f"[providers] {b.id} refusé {e.status} : {why}", flush=True)
             return {"ok": False, "error": f"Clé refusée ({e.status}) : {why}"}
         if e.status != 429:   # 429 = clé valide mais quota momentanément atteint
+            print(f"[providers] {b.id} erreur {e.status} : {str(e)[:300]}", flush=True)
             return {"ok": False, "error": str(e)[:200]}
     providers.add(b.id, b.key, b.model)
     return {"ok": True, "active": providers.state()}
