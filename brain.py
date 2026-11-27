@@ -284,7 +284,10 @@ def _dedupe(text):
 
 
 def _finish(st, text):
-    text = _dedupe(text) if text else text
+    if text:   # réponses lues à voix haute : pas de markdown
+        text = re.sub(r"\*\*|__|`+|^#+\s*", "", text, flags=re.M)
+        text = re.sub(r"^\s*[-*•]\s+", "", text, flags=re.M)
+        text = _dedupe(text)
     HISTORY.append({"role": "assistant", "content": text})
     del HISTORY[:-60]
     save_history()
