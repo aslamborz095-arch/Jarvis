@@ -38,6 +38,7 @@ class WakeService : Service() {
         val n = Notification.Builder(this, "wake").setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Jarvis vous écoute").setContentText("Dites « Hey Jarvis »").setContentIntent(open).setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(1, n)
+        Notifier.start(this)
         if (!running) { running = true; thread(name = "wake") { loop() } }
         return START_STICKY
     }

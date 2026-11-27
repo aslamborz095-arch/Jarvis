@@ -267,6 +267,9 @@ def notify_async(text, title="JARVIS"):
     import threading
     def run():
         try:
+            import wake, time as _t
+            if _t.time() - wake.NATIVE_POLL[0] < 180:   # l'appli Jarvis les affiche déjà
+                return
             if _devices() or SAVED.exists():
                 phone_notify(text, title)
         except Exception:

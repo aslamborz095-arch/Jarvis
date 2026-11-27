@@ -21,6 +21,9 @@ def push(kind, **data):
     EVENTS.append({"id": _counter[0], "type": kind, **data})
 
 
+NATIVE_POLL = [0.0]   # dernier passage de l'appli Android (notifications natives)
+
+
 def events_after(i):
     return [e for e in EVENTS if isinstance(e.get("id"), int) and e["id"] > i]
 

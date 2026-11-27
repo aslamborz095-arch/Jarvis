@@ -207,6 +207,8 @@ def evolution_apply(e: EvoIn, request: Request, x_jarvis_token: str = Header("")
 @app.get("/api/events")
 def events(request: Request, after: int = 0, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
+    if request.headers.get("x-jarvis-client") == "android-native":
+        wake.NATIVE_POLL[0] = __import__("time").time()   # l'appli affiche elle-même les notifications
     return {"events": wake.events_after(after), "last": wake._counter[0]}
 
 
