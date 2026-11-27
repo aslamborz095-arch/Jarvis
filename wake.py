@@ -16,11 +16,13 @@ RATE, CHUNK = 16000, 1280  # 80 ms
 
 def push(kind, **data):
     _counter[0] += 1
+    if "id" in data:   # un id métier (mission…) ne doit jamais écraser le numéro d'évènement
+        data["ref"] = data.pop("id")
     EVENTS.append({"id": _counter[0], "type": kind, **data})
 
 
 def events_after(i):
-    return [e for e in EVENTS if e["id"] > i]
+    return [e for e in EVENTS if isinstance(e.get("id"), int) and e["id"] > i]
 
 
 def beep(freq=880, ms=120):
