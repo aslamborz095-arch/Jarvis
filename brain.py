@@ -30,12 +30,24 @@ def save_history():
 PENDING = {}          # id -> état d'une tâche en attente de validation
 
 
+_NET = [0.0, False]
+
+
 def online():
-    try:
-        socket.create_connection(("api.anthropic.com", 443), timeout=2).close()
-        return True
-    except OSError:
-        return False
+    """Connexion internet (résultat gardé 30 s : la vérification coûtait jusqu'à 2 s par demande)."""
+    import time
+    if time.time() - _NET[0] < 30:
+        return _NET[1]
+    ok = False
+    for host in ("api.groq.com", "generativelanguage.googleapis.com", "1.1.1.1"):
+        try:
+            socket.create_connection((host, 443), timeout=1.5).close()
+            ok = True
+            break
+        except OSError:
+            continue
+    _NET[:] = [time.time(), ok]
+    return ok
 
 
 def ollama_ok():
@@ -93,7 +105,9 @@ def chain(lvl="complex"):
         out += ["oa:" + p["id"] for p in sorted(av, key=key)]
         if claude_ok and lvl == "simple":
             out.append("claude")
-    if ollama_ok() or start_ollama():
+    if out:
+        out.append("ollama")          # en secours : démarré seulement si on arrive jusqu'à lui
+    elif ollama_ok() or start_ollama():
         out.append("ollama")
     try:
         import metrics
@@ -305,6 +319,9 @@ def ask(message):
     except Exception:
         pass
     for backend in order:
+        if backend == "ollama" and not (ollama_ok() or start_ollama()):
+            log.append("cerveau local indisponible")
+            continue
         keep = 30 if backend in ("claude", "ollama") else 12
         msgs = [dict(m) for m in HISTORY[-keep:]]
         done = [l for l in log if "→" in l and "IA suivante" not in l]
@@ -347,6 +364,8 @@ def delegate(task: str, level: str = "simple", allowed=None):
     """Sous-agent : exécute une sous-tâche avec le niveau d'IA demandé (simple = rapide/économe, complex = puissant)."""
     order = chain("complex" if level.startswith("c") else "simple")
     for backend in order:
+        if backend == "ollama" and not (ollama_ok() or start_ollama()):
+            continue
         st = {"backend": backend, "messages": [{"role": "user", "content": task}], "queue": [], "results": [],
               "steps": 12, "log": [], "sub": True}
         try:
