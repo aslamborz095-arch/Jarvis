@@ -1,5 +1,6 @@
 """Anticipation : Jarvis regarde seul l'agenda, les mails récents, les tâches et les projets,
 et propose des missions utiles AVANT qu'on les lui demande (carte 🎯 LANCER / IGNORER).
+- Habitudes : une demande revenue ≥ 3 jours vers la même heure (21 derniers jours) → routine proposée ; LANCER = routine créée.
 
 - Toutes les 2 h (en ligne, RAM < 85 %) ou anticipate_now.
 - ≤ 2 propositions par passage, jamais deux fois la même (data/anticipations.json).
@@ -54,12 +55,86 @@ def _context():
     return "\n\n".join(parts)[:7000]
 
 
+STOP = set("alors aussi avec avoir bien cette comme dans donne donner elle est etre fais faire jarvis leur mais merci moins plus pour quel quelle quels quoi sans sont stp sur tout tous très vous votre peux veux moi mon mes les des une est-ce".split())
+
+
+def _norm(t):
+    import unicodedata
+    t = unicodedata.normalize("NFD", (t or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return frozenset(w for w in re.findall(r"[a-z0-9]{4,}", t) if w not in STOP)
+
+
+def habits(days=21, min_days=3):
+    """Demandes qui reviennent ≥ 3 jours différents à peu près à la même heure → routines à proposer."""
+    arch = pathlib.Path(__file__).parent / "data" / "archive.jsonl"
+    if not arch.exists():
+        return []
+    since = datetime.datetime.now() - datetime.timedelta(days=days)
+    groups = []   # [mots, texte, [(datetime)]]
+    for line in arch.read_text(encoding="utf-8").splitlines()[-4000:]:
+        try:
+            e = json.loads(line)
+            t = datetime.datetime.fromisoformat(e["t"])
+        except Exception:
+            continue
+        u = re.sub(r"^\[[^\]]*\]\s*", "", str(e.get("user", "")))
+        w = _norm(u)
+        if t < since or len(w) < 2 or u.lower().startswith(("mission", "routine")):
+            continue
+        for g in groups:
+            if len(w & g[0]) / len(w | g[0]) >= 0.6:
+                g[2].append(t); break
+        else:
+            groups.append([w, u.strip()[:200], [t]])
+    out = []
+    for w, text, ts in groups:
+        by_day = {}
+        for t in ts:
+            by_day.setdefault(t.date(), t)
+        if len(by_day) < min_days:
+            continue
+        mins = sorted(t.hour * 60 + t.minute for t in by_day.values())
+        if mins[-1] - mins[0] > 90:
+            continue
+        m = max(0, mins[len(mins) // 2] - 10) // 15 * 15   # un peu avant l'heure habituelle
+        wd = {d.weekday() for d in by_day}
+        when = ("en semaine " if wd <= {0, 1, 2, 3, 4} and len(by_day) >= 5 else "tous les jours ") + f"{m // 60:02d}:{m % 60:02d}"
+        out.append({"goal": text, "when": when, "days": len(by_day)})
+    return out[:3]
+
+
+def _propose_habits(d, wake):
+    new = []
+    try:
+        import routines
+        have = {_norm(r["goal"]) for r in routines._read()}
+    except Exception:
+        have = set()
+    for h in habits():
+        w = _norm(h["goal"])
+        if any(len(w & x) / max(1, len(w | x)) >= 0.6 for x in have):
+            continue
+        key = "r" + hashlib.md5((" ".join(sorted(w))).encode()).hexdigest()[:7]
+        if key in d["seen"]:
+            continue
+        txt = f"Vous me demandez souvent « {h['goal'][:90]} ». J'en fais une routine {h['when']} ?"
+        d["seen"][key] = {"goal": h["goal"], "t": datetime.datetime.now().isoformat(timespec="minutes")}
+        d["pending"][key] = {"goal": h["goal"], "when": h["when"], "why": f"demandé {h['days']} jours"}
+        wake.push("suggest", key=key, text=txt, why=f"habitude ({h['days']} jours)")
+        new.append(txt)
+    return new
+
+
 def scan():
     import evolve, wake
     d = _read()
+    found = _propose_habits(d, wake)   # habitudes repérées → routines proposées
+    if found:
+        _write(d)
     ctx = _context()
     if not ctx.strip():
-        return "Rien à analyser (Google non connecté et aucune tâche)."
+        return " | ".join(found) or "Rien à analyser (Google non connecté et aucune tâche)."
     seen = [v["goal"] for v in list(d["seen"].values())[-20:]]
     out = evolve._llm(PROMPT.format(now=datetime.datetime.now().strftime("%A %d/%m %H:%M"), ctx=ctx,
                                     seen=json.dumps(seen, ensure_ascii=False)), 1200)
@@ -83,6 +158,7 @@ def scan():
     d["seen"] = dict(list(d["seen"].items())[-200:])
     d["last"] = datetime.datetime.now().isoformat(timespec="minutes")
     _write(d)
+    new = found + new
     return ("Propositions : " + " | ".join(new)) if new else "Rien d'utile à anticiper pour l'instant."
 
 
@@ -143,6 +219,9 @@ def decide(key, approve):
         return "Proposition expirée."
     if not approve:
         return "Ignorée."
+    if p.get("when"):   # habitude → routine
+        import routines
+        return routines.routine_add(p["goal"], p["when"])
     import missions
     return missions.mission_start(p["goal"])
 
