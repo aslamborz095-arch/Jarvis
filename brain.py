@@ -222,6 +222,8 @@ def _call_model(st):
                 args = json.loads(c["function"].get("arguments") or "{}")
             except Exception:
                 args = {}
+            if isinstance(args, dict):
+                args = {k: v for k, v in args.items() if v is not None}   # null = paramètre omis
             calls.append({"id": c["id"], "name": c["function"]["name"], "args": args})
         text = (msg.get("content") or "").strip()
     else:

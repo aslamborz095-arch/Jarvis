@@ -254,6 +254,26 @@ def phone_shell(command: str):
 
 S = {"type": "string"}
 I = {"type": "integer"}
+def phone_notify(text: str, title: str = "JARVIS"):
+    """Affiche une notification sur le téléphone (Android 10+, via adb)."""
+    import shlex, re as _re
+    clean = lambda t: _re.sub(r"[\r\n]+", " ", str(t))[:900]
+    out = sh(f"cmd notification post -S bigtext -t {shlex.quote(clean(title))} jarvis {shlex.quote(clean(text))}", timeout=15)
+    return "Notification envoyée sur le téléphone." if "error" not in out.lower() and "exception" not in out.lower() else "Échec : " + out[:200]
+
+
+def notify_async(text, title="JARVIS"):
+    """Notification sans bloquer ni lever d'erreur (téléphone absent = rien)."""
+    import threading
+    def run():
+        try:
+            if _devices() or SAVED.exists():
+                phone_notify(text, title)
+        except Exception:
+            pass
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _p(props, req=None):
     return {"type": "object", "properties": props, "required": req if req is not None else list(props)}
 
@@ -269,6 +289,7 @@ SPECS = [
     ("phone_dial", "Compose un numéro sur le téléphone.", _p({"number": S})),
     ("phone_sms", "Prépare un SMS sur le téléphone.", _p({"number": S, "text": S})),
     ("phone_notifications", "Lit les notifications du téléphone.", _p({}, [])),
+    ("phone_notify", "Affiche une notification sur le téléphone de l'utilisateur.", _p({"text": S, "title": S}, ["text"])),
     ("phone_shell", "Commande shell Android (adb shell).", _p({"command": S})),
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}

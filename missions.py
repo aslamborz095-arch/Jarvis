@@ -128,6 +128,11 @@ def _worker():
                 projects.attach_mission(todo["goal"], final)
             except Exception:
                 pass
+            try:
+                import phone
+                phone.notify_async("Mission terminée : " + todo["goal"][:80] + "\n" + final[:600], "JARVIS 🎯")
+            except Exception:
+                pass
             _push(id=mid, text="Mission terminée : " + final[:300] + (" … (suite dans 🎯 Missions)" if len(final) > 300 else ""))
 
 

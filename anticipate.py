@@ -127,6 +127,11 @@ def _evening():
         import wake
         txt = bilan_now()
         wake.push("bilan", text=txt)
+        try:
+            import phone
+            phone.notify_async(txt, "JARVIS 📋 Bilan du jour")
+        except Exception:
+            pass
         threading.Thread(target=wake.speak, args=("Votre bilan du jour, monsieur. " + txt,), daemon=True).start()
 
 

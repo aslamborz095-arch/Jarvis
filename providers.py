@@ -92,7 +92,19 @@ ALTS = {"groq": ["llama-3.3-70b-versatile", "openai/gpt-oss-20b", "qwen/qwen3-32
 MODEL_COOL = {}   # (fournisseur, modèle) -> jusqu'à quand
 
 
-def _post(p, model, messages, tools_spec, max_tokens):
+def _loosen(tools_spec):
+    """Copie des outils où chaque paramètre facultatif accepte aussi null."""
+    out = json.loads(json.dumps(tools_spec))
+    for t in out:
+        sch = t.get("function", {}).get("parameters") or {}
+        req = set(sch.get("required") or [])
+        for k, v in (sch.get("properties") or {}).items():
+            if k not in req and isinstance(v.get("type"), str):
+                v["type"] = [v["type"], "null"]
+    return out
+
+
+def _post(p, model, messages, tools_spec, max_tokens, _retry=False):
     import httpx
     try:
         r = httpx.post(p["base"].rstrip("/") + "/chat/completions", timeout=120,
@@ -101,6 +113,11 @@ def _post(p, model, messages, tools_spec, max_tokens):
                                                "max_tokens": max_tokens}.items() if v is not None})
     except httpx.HTTPError as e:
         raise ProviderError(p["id"], 503, str(e))
+    if r.status_code == 400 and tools_spec and "validation failed" in r.text.lower() and not _retry:
+        # Le modèle a mal rempli un outil (souvent null pour un paramètre facultatif) : 2e essai avec schéma assoupli
+        note = {"role": "system", "content": "Pour chaque outil, respecte exactement son schéma ; omets les paramètres facultatifs au lieu de mettre null."}
+        i = 1 if messages and messages[0].get("role") == "system" else 0
+        return _post(p, model, messages[:i] + [note] + messages[i:], _loosen(tools_spec), max_tokens, _retry=True)
     if r.status_code != 200:
         raise ProviderError(p["id"], r.status_code, r.text, r.headers.get("retry-after"))
     data = r.json()
