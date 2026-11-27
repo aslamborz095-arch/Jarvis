@@ -257,6 +257,8 @@ I = {"type": "integer"}
 def phone_notify(text: str, title: str = "JARVIS"):
     """Affiche une notification sur le téléphone (Android 10+, via adb)."""
     import shlex, re as _re
+    if not device():
+        return "Téléphone non connecté. Ouvre le panneau 📱 de Jarvis pour l'associer."
     clean = lambda t: _re.sub(r"[\r\n]+", " ", str(t))[:900]
     out = sh(f"cmd notification post -S bigtext -t {shlex.quote(clean(title))} jarvis {shlex.quote(clean(text))}", timeout=15)
     return "Notification envoyée sur le téléphone." if "error" not in out.lower() and "exception" not in out.lower() else "Échec : " + out[:200]

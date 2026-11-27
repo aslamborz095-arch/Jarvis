@@ -5,6 +5,8 @@
 - context(message) : si la demande désigne « ça / cette page / l'écran / ici… », ajoute
   « Fenêtre active : <app> — <titre> » pour que Jarvis comprenne de quoi on parle.
 - activity_today : temps par application aujourd'hui (aussi ajouté au bilan du soir).
+- Rappel de pause : après PAUSE_AFTER min d'activité continue (pause = inactif ≥ 5 min ou écran verrouillé),
+  carte ⏰ + voix, puis au plus toutes les PAUSE_AGAIN min tant que la pause n'est pas prise. pause_set règle ou coupe.
 Coût : quelques appels Windows, aucune IA, aucune image.
 """
 import re, sys, json, time, threading, pathlib, datetime
@@ -14,6 +16,9 @@ DIR = BASE / "data" / "activity"
 TICK, IDLE_MAX = 10, 120
 STATE = {"app": "", "title": "", "idle": 0, "since": None}
 _day = {"date": None, "apps": {}}
+CFG = BASE / "data" / "pause.json"
+BREAK = 300                      # 5 min sans clavier/souris = pause prise
+PAUSE = {"start": None, "last": 0.0}
 _lock = threading.Lock()
 DEICTIC = re.compile(r"\b(ça|ca|ceci|cela|cette|cet|ce (?:mail|document|fichier|site|texte|code|truc)|l'?[ée]cran|ici|la page|cette page|la fen[êe]tre|ce que je (?:vois|regarde|lis))\b", re.I)
 NAMES = {"chrome": "Chrome", "msedge": "Edge", "firefox": "Firefox", "code": "VS Code", "explorer": "Explorateur",
@@ -77,6 +82,51 @@ def _tick():
         STATE.update(app=app, title=title[:160], idle=idle)
         if idle < IDLE_MAX and app not in ("?", "Écran verrouillé"):
             _day["apps"][app] = _day["apps"].get(app, 0) + TICK
+    _pause(app, idle)
+
+
+def _cfg():
+    try:
+        c = json.loads(CFG.read_text(encoding="utf-8"))
+    except Exception:
+        c = {}
+    return {"after": int(c.get("after", 90)), "again": int(c.get("again", 20)), "on": bool(c.get("on", True))}
+
+
+def _pause(app, idle, now=None):
+    """Suit l'activité continue ; renvoie le texte du rappel s'il part (testable hors Windows)."""
+    now = now or time.time()
+    if idle >= BREAK or app == "Écran verrouillé":
+        PAUSE["start"], PAUSE["last"] = None, 0.0
+        return None
+    if PAUSE["start"] is None:
+        PAUSE["start"] = now - idle
+    c = _cfg()
+    run = (now - PAUSE["start"]) / 60
+    if not c["on"] or run < c["after"] or now - PAUSE["last"] < c["again"] * 60:
+        return None
+    PAUSE["last"] = now
+    h, m = divmod(int(run), 60)
+    txt = f"Monsieur, cela fait {f'{h} h {m:02d}' if h else f'{m} min'} que vous êtes devant l'écran. Une pause de 5 minutes ?"
+    try:
+        import wake
+        wake.push("reminder", text=txt)
+        threading.Thread(target=wake.speak, args=(txt,), daemon=True).start()
+    except Exception:
+        pass
+    return txt
+
+
+def pause_set(minutes: int = 90, on: bool = True):
+    """Règle le rappel de pause : minutes d'écran continu avant rappel (on=false pour couper)."""
+    try:
+        minutes = max(15, min(480, int(minutes)))
+    except Exception:
+        minutes = 90
+    c = _cfg(); c.update(after=minutes, on=bool(on))
+    CFG.parent.mkdir(parents=True, exist_ok=True)
+    CFG.write_text(json.dumps(c), encoding="utf-8")
+    return f"Rappel de pause activé : après {minutes} min d'écran continu." if on else "Rappel de pause désactivé."
 
 
 def context(message):
@@ -124,6 +174,8 @@ def start():
 
 
 SPECS = [("activity_today", "Temps passé par application sur le PC aujourd'hui (ou un jour donné AAAA-MM-JJ) et fenêtre active.",
-          {"type": "object", "properties": {"day": {"type": "string"}}, "required": []})]
-FUNCS = {"activity_today": activity_today}
+          {"type": "object", "properties": {"day": {"type": "string"}}, "required": []}),
+         ("pause_set", "Règle le rappel de pause écran : minutes d'activité continue avant rappel, on=false pour le couper.",
+          {"type": "object", "properties": {"minutes": {"type": "integer"}, "on": {"type": "boolean"}}, "required": []})]
+FUNCS = {"activity_today": activity_today, "pause_set": pause_set}
 DANGEROUS = set()
