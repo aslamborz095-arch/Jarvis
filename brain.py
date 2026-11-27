@@ -351,6 +351,10 @@ def ask(message):
         try:
             text = _call_model(st)
             res = _finish(st, text) if text is not None else _loop(st)
+            if not (res.get("reply") or "").strip() and not res.get("confirm"):   # réponse vide : IA suivante
+                _measure(backend, False, t0, "réponse vide")
+                log.append(f"{backend.replace('oa:', '')} réponse vide → IA suivante")
+                continue
             res["backend"] = backend
             _measure(backend, True, t0)
             if not res.get("confirm"):
