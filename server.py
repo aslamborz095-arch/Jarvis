@@ -1,3 +1,4 @@
+import re
 """Serveur Jarvis : interface HUD + API (PC et téléphone)."""
 import os, sys, pathlib, tempfile
 
@@ -378,7 +379,8 @@ def providers_add(b: Brain, request: Request, x_jarvis_token: str = Header("")):
         providers.call(test, [{"role": "user", "content": "Réponds juste OK."}], None, max_tokens=5)
     except providers.ProviderError as e:
         if e.status in (401, 403):
-            return {"ok": False, "error": f"Clé refusée ({e.status})"}
+            why = re.sub(r"\s+", " ", str(e))[-220:]
+            return {"ok": False, "error": f"Clé refusée ({e.status}) : {why}"}
         if e.status != 429:   # 429 = clé valide mais quota momentanément atteint
             return {"ok": False, "error": str(e)[:200]}
     providers.add(b.id, b.key, b.model)
