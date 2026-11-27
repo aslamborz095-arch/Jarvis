@@ -1,5 +1,5 @@
 """Cerveau de Jarvis : cascade d'IA en ligne (Claude puis gratuites), Ollama en local en dernier recours."""
-import json, os, socket, uuid, datetime
+import json, os, re, socket, uuid, datetime
 
 import httpx
 import tools, providers
@@ -254,7 +254,19 @@ def _loop(st):
             return _finish(st, text)
 
 
+def _dedupe(text):
+    """Supprime les phrases répétées (certaines IA renvoient deux fois la même réponse)."""
+    import difflib
+    parts = re.split(r"(?<=[.!?])\s*(?=[A-ZÀ-Ý])", text.strip())
+    out = []
+    for p in parts:
+        if not any(difflib.SequenceMatcher(None, _plain(p), _plain(o)).ratio() > 0.6 for o in out):
+            out.append(p)
+    return " ".join(out)
+
+
 def _finish(st, text):
+    text = _dedupe(text) if text else text
     HISTORY.append({"role": "assistant", "content": text})
     del HISTORY[:-60]
     save_history()

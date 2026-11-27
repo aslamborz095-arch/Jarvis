@@ -41,8 +41,8 @@ def _rms(a):
     return float(np.sqrt(np.mean(a.astype(np.float32) ** 2)))
 
 
-def _record(q, noise):
-    """Enregistre la commande jusqu'au silence (max 12 s)."""
+def _record(q, noise, wait=4):
+    """Enregistre la commande jusqu'au silence (max 12 s ; rien dit pendant `wait` s → None)."""
     thr = max(30.0, noise * 2.2)   # micro faible : seuil bas
     frames, started, silent = [], False, 0
     t0 = time.time()
@@ -56,7 +56,7 @@ def _record(q, noise):
             silent += 1
             if silent > 14:          # ~1,1 s de silence
                 break
-        elif time.time() - t0 > 4:   # rien dit en 4 s
+        elif time.time() - t0 > wait:   # rien dit à temps
             return None
     return frames if started else None
 
@@ -90,6 +90,23 @@ def ack():
         beep()
 
 
+FOLLOWUPS = int(os.getenv("JARVIS_FOLLOWUPS", "3"))      # questions de suite sans mot d'éveil (0 = désactivé)
+FOLLOW_WAIT = float(os.getenv("JARVIS_FOLLOW_WAIT", "5"))  # secondes d'écoute après une réponse
+STOP = re.compile(r"^(merci|c.est tout|stop|rien|non merci|ok merci|ça ira|ca ira)\b", re.I)
+
+
+def _save_wav(frames):
+    import numpy as np
+    path = os.path.join(tempfile.gettempdir(), "jarvis_cmd.wav")
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE)
+        a = np.concatenate(frames).astype(np.float32)
+        pk = float(np.abs(a).max()) or 1.0
+        a = np.clip(a * min(29000.0 / pk, 30.0), -32768, 32767).astype(np.int16)   # volume normalisé
+        w.writeframes(a.tobytes())
+    return path
+
+
 def _handle(q, noise, text=None):
     import numpy as np
     STATE["busy"] = True
@@ -107,29 +124,37 @@ def _handle(q, noise, text=None):
                 push("state", state="idle")
                 return
             push("state", state="thinking")
-            path = os.path.join(tempfile.gettempdir(), "jarvis_cmd.wav")
-            with wave.open(path, "wb") as w:
-                w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE)
-                a = np.concatenate(frames).astype(np.float32)
-                pk = float(np.abs(a).max()) or 1.0
-                a = np.clip(a * min(29000.0 / pk, 30.0), -32768, 32767).astype(np.int16)   # volume normalisé
-                w.writeframes(a.tobytes())
-            text = stt.transcribe(path)
+            text = stt.transcribe(_save_wav(frames))
         text = NAME.sub("", text or "").strip(" ,.!?")   # « Hey Jarvis » répété en tête : on l'enlève
         if not text or HALLU.search(text) or len(text) < 3:
             push("state", state="idle")
             if text and not HALLU.search(text):
                 speak("Je n'ai pas compris, monsieur.")
             return
-        push("user", text=text)
-        res = brain.ask(text)
-        if res.get("confirm"):
-            push("confirm", res=res)
-            speak("J'ai besoin de votre autorisation à l'écran.")
-        else:
+        for turn in range(FOLLOWUPS + 1):
+            push("user", text=text)
+            res = brain.ask(text)
+            if res.get("confirm"):
+                push("confirm", res=res)
+                speak("J'ai besoin de votre autorisation à l'écran.")
+                break
             push("reply", res=res)
             push("state", state="speaking")
             speak(res.get("reply", ""))
+            if turn == FOLLOWUPS or not FOLLOWUPS:
+                break
+            # conversation continue : on écoute la suite quelques secondes, sans mot d'éveil
+            time.sleep(0.35)
+            while not q.empty():          # écho de sa propre voix
+                q.get_nowait()
+            push("state", state="listening")
+            frames = _record(q, noise, wait=FOLLOW_WAIT)
+            if not frames:
+                break
+            push("state", state="thinking")
+            text = NAME.sub("", stt.transcribe(_save_wav(frames)) or "").strip(" ,.!?")
+            if not text or HALLU.search(text) or len(text) < 3 or STOP.search(text):
+                break
         push("state", state="idle")
     finally:
         while not q.empty():      # oublie ce que le micro a entendu pendant la réponse
