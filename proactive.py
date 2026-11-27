@@ -186,7 +186,7 @@ def dashboard():
 S = {"type": "string"}
 SPECS = [
     ("briefing", "Point du jour : météo, agenda, mails non lus, état PC/téléphone, rappels.", {"type": "object", "properties": {}, "required": []}),
-    ("remind", "Crée un rappel parlé. when = AAAA-MM-JJTHH:MM (heure de Paris) ou +30m / +2h.",
+    ("remind", "Crée un rappel parlé ponctuel (pas pour les pauses écran : pause_set). when = AAAA-MM-JJTHH:MM (heure de Paris) ou +30m / +2h.",
      {"type": "object", "properties": {"text": S, "when": S}, "required": ["text", "when"]}),
     ("reminders_list", "Liste les rappels à venir.", {"type": "object", "properties": {}, "required": []}),
     ("task_add", "Ajoute une tâche à la liste (due = AAAA-MM-JJ facultatif).", {"type": "object", "properties": {"text": S, "due": S}, "required": ["text"]}),

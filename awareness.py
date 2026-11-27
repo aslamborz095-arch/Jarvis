@@ -175,7 +175,7 @@ def start():
 
 SPECS = [("activity_today", "Temps passé par application sur le PC aujourd'hui (ou un jour donné AAAA-MM-JJ) et fenêtre active.",
           {"type": "object", "properties": {"day": {"type": "string"}}, "required": []}),
-         ("pause_set", "Règle le rappel de pause écran : minutes d'activité continue avant rappel, on=false pour le couper.",
+         ("pause_set", "Rappel de pause automatique selon le temps d'écran continu (« rappelle-moi de faire une pause après X min d'écran ») : minutes avant rappel, on=false pour couper. Utiliser CET outil, pas remind, pour toute pause écran.",
           {"type": "object", "properties": {"minutes": {"type": "integer"}, "on": {"type": "boolean"}}, "required": []})]
 FUNCS = {"activity_today": activity_today, "pause_set": pause_set}
 DANGEROUS = set()
