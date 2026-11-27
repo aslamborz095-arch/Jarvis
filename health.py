@@ -8,6 +8,7 @@ Contrôles → actions :
 - Toutes les IA en ligne en pause → alerte (le cerveau local prend le relais).
 - Mot d'éveil activé mais micro muet → relance fix_mic() (1 fois par heure max).
 - Mission bloquée en « planning » depuis > 20 min → relance du moteur de missions.
+- Téléphone associé mais décroché d'ADB → reconnexion à la dernière adresse (silencieux si injoignable).
 Chaque action est notée dans data/health.json ; health_check donne l'état ; GET /api/health.
 """
 import json, os, sys, gzip, time, threading, pathlib, datetime
@@ -91,6 +92,16 @@ def check(repair=True):
                 _mic_fix_at[0] = time.time()
                 wake.fix_mic()
                 acts.append("micro relancé")
+    except Exception:
+        pass
+    try:
+        import phone   # liaison ADB Wi-Fi du téléphone : reconnexion silencieuse (Xiaomi la coupe souvent)
+        if phone.SAVED.exists() and repair:
+            before = bool(phone._devices())
+            ok = before or bool(phone.device())
+            STATE["phone"] = "connecté" if ok else "injoignable"
+            if ok and not before:
+                acts.append("téléphone reconnecté (ADB Wi-Fi)")
     except Exception:
         pass
     try:
