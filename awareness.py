@@ -18,7 +18,7 @@ _lock = threading.Lock()
 DEICTIC = re.compile(r"\b(ça|ca|ceci|cela|cette|cet|ce (?:mail|document|fichier|site|texte|code|truc)|l'?[ée]cran|ici|la page|cette page|la fen[êe]tre|ce que je (?:vois|regarde|lis))\b", re.I)
 NAMES = {"chrome": "Chrome", "msedge": "Edge", "firefox": "Firefox", "code": "VS Code", "explorer": "Explorateur",
          "winword": "Word", "excel": "Excel", "powerpnt": "PowerPoint", "notepad": "Bloc-notes", "claude": "Claude",
-         "spotify": "Spotify", "discord": "Discord", "whatsapp": "WhatsApp", "vlc": "VLC", "obs64": "OBS"}
+         "spotify": "Spotify", "csrss": "Écran verrouillé", "lockapp": "Écran verrouillé", "logonui": "Écran verrouillé", "discord": "Discord", "whatsapp": "WhatsApp", "vlc": "VLC", "obs64": "OBS"}
 
 
 def _foreground():
@@ -75,13 +75,13 @@ def _tick():
         if app != STATE["app"] or title != STATE["title"]:
             STATE["since"] = datetime.datetime.now().isoformat(timespec="seconds")
         STATE.update(app=app, title=title[:160], idle=idle)
-        if idle < IDLE_MAX and app not in ("?", "LockApp"):
+        if idle < IDLE_MAX and app not in ("?", "Écran verrouillé"):
             _day["apps"][app] = _day["apps"].get(app, 0) + TICK
 
 
 def context(message):
     """Ligne de contexte courte, seulement si la demande désigne quelque chose à l'écran."""
-    if not STATE["app"] or not DEICTIC.search(message or ""):
+    if STATE["app"] in ("", "?", "Écran verrouillé") or not DEICTIC.search(message or ""):
         return []
     t = STATE["title"][:100]
     return [f"Fenêtre active sur le PC : {STATE['app']}" + (f" — « {t} »" if t else "")
