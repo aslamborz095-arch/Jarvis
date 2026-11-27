@@ -117,7 +117,8 @@ def _worker():
             _push(id=mid, text=f"Étape {i + 1}/{len(todo['steps'])} {'faite' if ok else 'difficile'} : {s['do'][:70]}")
         else:
             final = brain.delegate("Rédige le LIVRABLE FINAL de cette mission pour l'utilisateur : le contenu concret et complet "
-                                   "(pas un renvoi vers un mail ou un brouillon), clair, sans remplissage, 2500 caractères max.\nObjectif : "
+                                   "(pas un renvoi vers un mail ou un brouillon), clair, sans remplissage, 2500 caractères max. "
+                                   "N'affirme jamais avoir envoyé ou enregistré quoi que ce soit (fichier, mail) : seul ce texte est livré.\nObjectif : "
                                    + todo["goal"] + "\nRésultats des étapes :\n" + "\n".join(f"- {x['do']} → {x['result'][:1200]}" for x in todo["steps"]),
                                    "complex", allowed=set())
             final = final.split("] ", 1)[-1]
