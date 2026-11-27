@@ -564,4 +564,5 @@ if __name__ == "__main__":
     __import__("health").start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
-    uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))
+    # access_log coupé : les requêtes de suivi (toutes les secondes) noyaient le journal
+    uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")), access_log=os.getenv("ACCESS_LOG") == "1")
