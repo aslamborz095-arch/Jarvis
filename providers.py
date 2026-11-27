@@ -85,12 +85,19 @@ def state():
     return out
 
 
-def call(p, messages, tools_spec, max_tokens=1200):
+# Modèles de secours chez le même fournisseur : chaque modèle a son propre quota gratuit
+ALTS = {"groq": ["llama-3.3-70b-versatile", "openai/gpt-oss-20b", "qwen/qwen3-32b"],
+        "gemini": ["gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        "openrouter": ["meta-llama/llama-3.3-70b-instruct:free", "deepseek/deepseek-chat-v3.1:free"]}
+MODEL_COOL = {}   # (fournisseur, modèle) -> jusqu'à quand
+
+
+def _post(p, model, messages, tools_spec, max_tokens):
     import httpx
     try:
         r = httpx.post(p["base"].rstrip("/") + "/chat/completions", timeout=120,
                        headers={"Authorization": f"Bearer {p['key']}", "HTTP-Referer": "http://127.0.0.1:8765", "X-Title": "Jarvis"},
-                       json={k: v for k, v in {"model": p["model"], "messages": messages, "tools": tools_spec,
+                       json={k: v for k, v in {"model": model, "messages": messages, "tools": tools_spec,
                                                "max_tokens": max_tokens}.items() if v is not None})
     except httpx.HTTPError as e:
         raise ProviderError(p["id"], 503, str(e))
@@ -100,3 +107,24 @@ def call(p, messages, tools_spec, max_tokens=1200):
     if "choices" not in data or not data["choices"]:
         raise ProviderError(p["id"], 502, json.dumps(data)[:200])
     return data["choices"][0]["message"]
+
+
+def call(p, messages, tools_spec, max_tokens=1200):
+    """Appelle le modèle principal ; s'il a atteint son quota (429), essaie les modèles de secours du même fournisseur."""
+    now = time.time()
+    models = [p["model"]] + [m for m in ALTS.get(p["id"], []) if m != p["model"]]
+    last = None
+    for m in models:
+        if MODEL_COOL.get((p["id"], m), 0) > now:
+            continue
+        try:
+            return _post(p, m, messages, tools_spec, max_tokens)
+        except ProviderError as e:
+            last = e
+            if e.status == 429:
+                MODEL_COOL[(p["id"], m)] = now + min(float(e.retry_after or 0) or 600, 6 * 3600)
+            elif e.status in (400, 404, 422) and m != p["model"]:
+                MODEL_COOL[(p["id"], m)] = now + 24 * 3600   # modèle de secours inexistant ou incompatible
+            else:
+                raise
+    raise last or ProviderError(p["id"], 429, "tous les modèles de ce fournisseur sont en pause")

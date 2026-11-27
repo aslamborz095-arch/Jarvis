@@ -147,6 +147,28 @@ def suggest(s: SuggestIn, request: Request, x_jarvis_token: str = Header("")):
     return {"reply": __import__("anticipate").decide(s.key, s.approve)}
 
 
+@app.get("/missions")
+def missions_page():
+    return FileResponse(BASE / "static" / "missions.html")
+
+
+class MissionIn(BaseModel):
+    goal: str = ""
+    id: str = ""
+
+
+@app.post("/api/missions")
+def missions_start(m: MissionIn, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    return {"reply": __import__("missions").mission_start(m.goal.strip()[:500]) if m.goal.strip() else "Objectif vide."}
+
+
+@app.post("/api/missions/stop")
+def missions_stop(m: MissionIn, request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    return {"reply": __import__("missions").mission_stop(m.id)}
+
+
 @app.get("/api/missions")
 def missions_view(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)

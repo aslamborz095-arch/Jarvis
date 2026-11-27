@@ -1,0 +1,59 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS — Missions & projets</title>
+<style>
+@font-face{font-family:Orbitron;src:url(/static/fonts/orbitron-latin-700-normal.woff2)}
+@font-face{font-family:Rajdhani;src:url(/static/fonts/rajdhani-latin-600-normal.woff2)}
+:root{--c:#35e0ff;--bg:#010409}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#06223a,var(--bg) 60%);color:#d8f6ff;font:16px Rajdhani,sans-serif;min-height:100vh;padding:18px}
+h1{font:700 22px Orbitron;letter-spacing:4px;color:var(--c);margin:0 0 4px;text-shadow:0 0 12px var(--c)}
+h2{font:700 14px Orbitron;letter-spacing:3px;margin:0 0 10px;color:var(--c)}
+#at{opacity:.6;font-size:13px;margin-bottom:16px}
+.card{background:rgba(53,224,255,.06);border:1px solid rgba(53,224,255,.25);border-left:4px solid var(--b,#35e0ff);border-radius:8px;padding:10px 12px;margin-bottom:10px;backdrop-filter:blur(4px)}
+.running{--b:#ffb547}.planning{--b:#ffb547}.done{--b:#41f59a}.failed,.stopped{--b:#ff5a5a}
+.t{font-weight:600}.d{opacity:.75;font-size:14px}.k{float:right;font-size:11px;letter-spacing:2px;opacity:.8;text-transform:uppercase}
+.bar{height:5px;background:#0b2a38;border-radius:3px;margin:8px 0;overflow:hidden}.bar i{display:block;height:100%;background:var(--b,#35e0ff);box-shadow:0 0 8px var(--b,#35e0ff)}
+ol{margin:6px 0 0 18px;padding:0;font-size:14px}li{margin:3px 0;opacity:.6}li.ok{opacity:1}li.ok::marker{color:#41f59a}
+details summary{cursor:pointer;font-size:13px;opacity:.8;margin-top:6px}
+button{background:none;border:1px solid var(--c);color:var(--c);font:600 12px Orbitron;letter-spacing:2px;padding:7px 12px;border-radius:6px;cursor:pointer}
+button.stop{border-color:#ff5a5a;color:#ff5a5a;float:right;margin-left:8px}
+#new{display:flex;gap:8px;margin:10px 0 18px}#new input{flex:1;background:#021018;border:1px solid #1d4a5c;color:#fff;padding:8px;border-radius:6px;font:16px Rajdhani}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}.stat{flex:1;min-width:120px;text-align:center}.stat b{display:block;font:700 22px Orbitron;color:var(--c)}
+@media(min-width:900px){#cols{display:grid;grid-template-columns:3fr 2fr;gap:22px}}
+</style></head><body>
+<h1>MISSIONS & PROJETS</h1><div id="at">Chargement…</div>
+<form id="new"><input id="goal" placeholder="Nouvelle mission (objectif en une phrase)…"><button>LANCER</button><button type="button" onclick="load()">↻</button></form>
+<div class="stats" id="stats"></div>
+<div id="cols"><div><h2>MISSIONS</h2><div id="ms"></div></div><div><h2>PROJETS</h2><div id="ps"></div></div></div>
+<script>
+const tok=(()=>{try{return (window.JarvisAndroid?.kvGet?.("jarvis_token"))||localStorage.getItem("jarvis_token")||""}catch{return ""}})();
+const H={"X-Jarvis-Token":tok,"Content-Type":"application/json"};
+const esc=s=>String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ST={planning:"PLANIFICATION",running:"EN COURS",done:"TERMINÉE",failed:"ÉCHEC",stopped:"ARRÊTÉE"};
+async function j(u,o){const r=await fetch(u,{headers:H,...o});if(r.status==401)throw "auth";return r.json()}
+async function load(){
+  try{
+    const [d,m]=await Promise.all([j("/api/missions"),j("/api/metrics")]);
+    const ms=(d.missions||[]).slice().reverse();
+    document.getElementById("ms").innerHTML=ms.map(x=>{const n=x.steps.length,k=x.steps.filter(s=>s.done).length,p=n?Math.round(100*k/n):0;
+      return `<div class="card ${x.status}">${["running","planning"].includes(x.status)?`<button class="stop" onclick="stop('${x.id}')">ARRÊTER</button>`:""}<span class="k">${ST[x.status]||x.status}</span>
+      <div class="t">${esc(x.goal)}</div><div class="d">${esc(x.start)} — ${k}/${n} étapes</div><div class="bar"><i style="width:${p}%"></i></div>
+      ${x.summary?`<div>${esc(x.summary)}</div>`:""}
+      ${n?`<details><summary>Étapes</summary><ol>${x.steps.map(s=>`<li class="${s.done?"ok":""}">${esc(s.do)}${s.result?`<div class="d">${esc(s.result.replace(/^\[sous-agent [^\]]*\]\s*/,"").slice(0,300))}</div>`:""}</li>`).join("")}</ol></details>`:""}</div>`}).join("")||'<div class="d">Aucune mission. Donnez un objectif ci-dessus.</div>';
+    const ps=Object.values(d.projects||{});
+    document.getElementById("ps").innerHTML=ps.map(p=>`<div class="card"><span class="k">${p.notes.length} notes</span><div class="t">${esc(p.name)}</div>
+      ${p.notes.slice(-3).reverse().map(n=>`<div class="d">${esc(n.t)} — ${esc(n.note)}</div>`).join("")}
+      ${p.notes.length>3?`<details><summary>Tout l'historique</summary>${p.notes.slice(0,-3).reverse().map(n=>`<div class="d">${esc(n.t)} — ${esc(n.note)}</div>`).join("")}</details>`:""}</div>`).join("")||'<div class="d">Aucun projet suivi.</div>';
+    const o=Object.values(m.outils||{}),tot=o.reduce((a,x)=>a+x.appels,0),ok=o.reduce((a,x)=>a+x.appels*x.reussite_pct/100,0);
+    const best=Object.entries(m.cerveaux||{}).sort((a,b)=>b[1].recent_pct-a[1].recent_pct)[0];
+    document.getElementById("stats").innerHTML=`<div class="card stat"><b>${ms.filter(x=>["running","planning"].includes(x.status)).length}</b>missions actives</div>
+      <div class="card stat"><b>${tot?Math.round(100*ok/tot):"—"}%</b>actions réussies</div>
+      <div class="card stat"><b>${ps.length}</b>projets suivis</div>
+      <div class="card stat"><b>${best?esc(best[0].replace("oa:","")):"—"}</b>meilleure IA</div>`;
+    document.getElementById("at").textContent="Mis à jour à "+new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  }catch(e){document.getElementById("at").textContent=e=="auth"?"Ouvrez d'abord Jarvis pour entrer le code.":"PC injoignable."}
+}
+async function stop(id){await j("/api/missions/stop",{method:"POST",body:JSON.stringify({id})});load()}
+document.getElementById("new").onsubmit=async e=>{e.preventDefault();const g=document.getElementById("goal").value.trim();if(!g)return;
+  document.getElementById("at").textContent="Lancement…";await j("/api/missions",{method:"POST",body:JSON.stringify({goal:g})});document.getElementById("goal").value="";load()};
+load();setInterval(load,20000);
+</script></body></html>
