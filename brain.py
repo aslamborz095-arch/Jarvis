@@ -251,6 +251,12 @@ def _flush(st):
 
 def _loop(st):
     while True:
+        safe = [c for c in st["queue"] if not (CONFIRM and c["name"] in tools.DANGEROUS and not c.get("approved"))]
+        if len(safe) > 1 and len(safe) == len(st["queue"]):   # aucun à valider : tout en même temps
+            for c, out in run_parallel(st["queue"], lambda c: (c, tools.execute(c["name"], c["args"]))):
+                st["log"].append(f"{c['name']} → {out[:160]}")
+                st["results"].append((c, out))
+            st["queue"] = []
         while st["queue"]:
             c = st["queue"][0]
             if CONFIRM and c["name"] in tools.DANGEROUS and not c.get("approved"):
@@ -363,30 +369,47 @@ def _measure(backend, ok, t0, err=""):
         pass
 
 
-def delegate(task: str, level: str = "simple", allowed=None):
-    """Sous-agent : exécute une sous-tâche avec le niveau d'IA demandé (simple = rapide/économe, complex = puissant)."""
+READ_ONLY = {"web_search", "fetch_url", "read_file", "list_dir", "recall", "system_status", "gmail_search", "gmail_read",
+             "calendar_list", "project_recall", "phone_status", "phone_notifications", "tasks_list", "reminders_list",
+             "routine_list", "mission_status", "performance_report"}
+
+
+def run_parallel(calls, run):
+    """Exécute plusieurs appels d'outils en même temps (recherche + lecture de pages…) ; résultats dans l'ordre."""
+    if len(calls) <= 1 or not all(c["name"] in READ_ONLY or c["name"].startswith("skill_") for c in calls):
+        return [run(c) for c in calls]   # actions (clavier, souris, téléphone…) : l'ordre compte
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(4, len(calls))) as ex:
+        return list(ex.map(run, calls))
+
+
+def delegate(task: str, level: str = "simple", allowed=None, max_rounds=8):
+    """Sous-agent : exécute une sous-tâche avec le niveau d'IA demandé (simple = rapide/économe, complex = puissant).
+    Outils d'un même tour lancés en parallèle ; au-delà de max_rounds allers-retours, il doit conclure."""
     order = chain("complex" if level.startswith("c") else "simple")
     for backend in order:
         if backend == "ollama" and not (ollama_ok() or start_ollama()):
             continue
         st = {"backend": backend, "messages": [{"role": "user", "content": task}], "queue": [], "results": [],
-              "steps": 12, "log": [], "sub": True}
+              "steps": 0, "log": [], "sub": True}
+
+        def run(c):
+            if c["name"] in tools.DANGEROUS or c["name"] in ("delegate", "team_task", "mission_start"):
+                return c, "Refusé : un sous-agent ne peut pas faire d'action sensible."
+            if allowed is not None and c["name"] not in allowed:
+                return c, "Outil non autorisé pour ce rôle. Outils permis : " + (", ".join(sorted(allowed)) or "aucun")
+            return c, tools.execute(c["name"], c["args"])
         try:
             text = _call_model(st)
             while text is None:
-                for c in st["queue"]:
-                    if c["name"] in tools.DANGEROUS or c["name"] in ("delegate", "team_task"):
-                        out = "Refusé : un sous-agent ne peut pas faire d'action sensible."
-                    elif allowed is not None and c["name"] not in allowed:
-                        out = "Outil non autorisé pour ce rôle. Outils permis : " + (", ".join(sorted(allowed)) or "aucun")
-                    else:
-                        out = tools.execute(c["name"], c["args"])
-                    st["results"].append((c, out))
+                st["results"] += run_parallel(st["queue"], run)
                 st["queue"] = []
                 _flush(st); st["steps"] += 1
-                if st["steps"] > MAX_STEPS:
-                    break
+                if st["steps"] >= max_rounds:   # assez cherché : il doit conclure avec ce qu'il a
+                    st["messages"].append({"role": "user", "content": "Stop les outils. Donne maintenant ton résultat final avec ce que tu as."})
                 text = _call_model(st)
+                if text is None and st["steps"] > max_rounds:
+                    break
             return f"[sous-agent {backend.replace('oa:', '')}] {text or 'sans réponse'}"
         except providers.ProviderError as e:
             providers.cool(e)

@@ -70,7 +70,7 @@ def _push(**data):
 
 def _plan(goal):
     import evolve
-    out = evolve._llm(PLAN.format(goal=goal, n=MAX_STEPS), 1000)
+    out = evolve._llm(PLAN.format(goal=goal, n=MAX_STEPS), 1000, fast=True)
     m = re.search(r"\{.*\}", out or "", re.S)
     try:
         steps = json.loads(m.group(0))["steps"][:MAX_STEPS]
@@ -108,7 +108,7 @@ def _worker():
                     f"Ton étape ({i + 1}/{len(todo['steps'])}) : {s['do']}\nCritère de réussite : {s['check']}\n"
                     "Réalise-la avec tes outils et rends un résultat court et concret.")
             t0 = time.time()
-            res = brain.delegate(task, s["level"], allowed=_allowed())
+            res = brain.delegate(task, s["level"], allowed=_allowed(), max_rounds=5)
             if metrics.tool_failed(res.split("] ", 1)[-1]) or "Aucune IA" in res:
                 res = brain.delegate(task + "\nUne première tentative a échoué : " + res[:300] + "\nProcède autrement.", "complex", allowed=_allowed())
             ok = not metrics.tool_failed(res.split("] ", 1)[-1])

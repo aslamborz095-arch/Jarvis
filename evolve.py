@@ -138,10 +138,11 @@ def test_skill(code, args):
 
 
 # ---------- IA ----------
-def _llm(prompt, max_tokens=3500):
+def _llm(prompt, max_tokens=3500, fast=False):
+    """IA la plus puissante d'abord (ou la plus rapide si fast=True)."""
     import providers
     tiers = {"top": 0, "mid": 1, "fast": 2}
-    av = sorted(providers.available(), key=lambda p: tiers.get(providers.PRESETS.get(p["id"], {}).get("tier"), 1))
+    av = sorted(providers.available(), key=lambda p: tiers.get(providers.PRESETS.get(p["id"], {}).get("tier"), 1), reverse=fast)
     for p in av:
         try:
             m = providers.call(p, [{"role": "user", "content": prompt}], None, max_tokens=max_tokens)
