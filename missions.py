@@ -116,9 +116,10 @@ def _worker():
             todo = _update(mid, step_result=(i, res[:3000]))
             _push(id=mid, text=f"Étape {i + 1}/{len(todo['steps'])} {'faite' if ok else 'difficile'} : {s['do'][:70]}")
         else:
-            final = brain.delegate("Fais la synthèse finale, courte et utile, de cette mission pour l'utilisateur.\nObjectif : "
-                                   + todo["goal"] + "\n" + "\n".join(f"- {x['do']} → {x['result'][:500]}" for x in todo["steps"]),
-                                   "simple", allowed=set())
+            final = brain.delegate("Rédige le LIVRABLE FINAL de cette mission pour l'utilisateur : le contenu concret et complet "
+                                   "(pas un renvoi vers un mail ou un brouillon), clair, sans remplissage, 2500 caractères max.\nObjectif : "
+                                   + todo["goal"] + "\nRésultats des étapes :\n" + "\n".join(f"- {x['do']} → {x['result'][:1200]}" for x in todo["steps"]),
+                                   "complex", allowed=set())
             final = final.split("] ", 1)[-1]
             _update(mid, status="done", end=datetime.datetime.now().isoformat(timespec="minutes"), summary=final[:3000])
             try:
@@ -126,7 +127,7 @@ def _worker():
                 projects.attach_mission(todo["goal"], final)
             except Exception:
                 pass
-            _push(id=mid, text="Mission terminée : " + final[:300])
+            _push(id=mid, text="Mission terminée : " + final[:300] + (" … (suite dans 🎯 Missions)" if len(final) > 300 else ""))
 
 
 def _kick():

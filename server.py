@@ -553,6 +553,7 @@ if __name__ == "__main__":
     evolve.start()
     __import__("missions").start()
     __import__("anticipate").start()
+    __import__("routines").start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))
