@@ -175,6 +175,13 @@ def missions_view(request: Request, x_jarvis_token: str = Header("")):
     return {"missions": __import__("missions")._read()[-10:], "projects": __import__("projects")._read()}
 
 
+@app.get("/api/health")
+def health_view(request: Request, x_jarvis_token: str = Header("")):
+    auth(x_jarvis_token, request)
+    import health
+    return health.STATE
+
+
 @app.get("/api/metrics")
 def metrics_view(request: Request, x_jarvis_token: str = Header("")):
     auth(x_jarvis_token, request)
@@ -554,6 +561,7 @@ if __name__ == "__main__":
     __import__("missions").start()
     __import__("anticipate").start()
     __import__("routines").start()
+    __import__("health").start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8765")))

@@ -124,7 +124,7 @@ def system_prompt():
         "Auto-évolution : toutes les 6 h tu analyses tes échecs et crées/testes seul des compétences ; evolve_now lance un cycle, evolution_report montre ce qui attend, evolution_apply active (validation de l'utilisateur). "
         "Pour un livrable (synthèse, texte, plan, comparatif, recherche approfondie), utilise team_task : chercheur, rédacteur et relecteur travaillent pour toi. performance_report donne tes taux de réussite. "
         "Pour un objectif long en plusieurs étapes (préparer, organiser, suivre, rechercher sur la durée), lance mission_start : tu le mènes seul en arrière-plan ; mission_status / mission_stop ; pour une tâche récurrente (« chaque lundi à 8 h… »), routine_add. "
-        "Tu gardes le fil de chaque projet de l'utilisateur : project_note pour toute décision ou avancée, project_recall pour reprendre un projet. anticipate_now propose des missions utiles à l'avance ; bilan_now fait le bilan du jour. "
+        "Tu gardes le fil de chaque projet de l'utilisateur : project_note pour toute décision ou avancée, project_recall pour reprendre un projet. anticipate_now propose des missions utiles à l'avance ; bilan_now fait le bilan du jour ; health_check vérifie et répare ta santé (mémoire, disque, IA, micro). "
         "Autonomie PC : pour toute tâche dans une interface sans outil direct (appli, site, réglages, formulaire), appelle screen_task avec le but complet ; il pilote l'écran seul jusqu'au bout. screen_stop l'arrête. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
@@ -143,6 +143,8 @@ GROUPS = {
                 lambda n: n.startswith("project_") or n in ("anticipate_now", "bilan_now")),
     "missions": (("mission", "routine", "chaque", "tous les", "programme", "objectif", "arriere-plan", "arriere plan", "suivre", "organise", "prepare"),
                  lambda n: n.startswith(("mission_", "routine_"))),
+    "sante": (("sante", "diagnostic", "lent", "ram", "memoire vive", "disque", "bug", "plante", "marche pas", "probleme"),
+              lambda n: n == "health_check"),
     "evolve": (("evolu", "amelior", "ameliore", "competence", "apprend", "progress"),
                lambda n: n.startswith("evol")),
 }

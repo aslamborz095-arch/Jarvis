@@ -515,6 +515,7 @@ async function pollEvents() {
       if (e.type === "reminder") { line("⏰ Rappel : " + e.text); typeOut("⏰ " + e.text); }
       if (e.type === "evolve") evolveCard(e);
       if (e.type === "suggest") suggestCard(e);
+      if (e.type === "health") line("🩺 " + e.text, "log");
       if (e.type === "bilan") { line("📋 Bilan du jour : " + e.text, "log"); typeOut("📋 " + e.text); }
       if (e.type === "mission") { line("🎯 " + e.text, "log"); typeOut("🎯 " + e.text); }
       if (e.type === "idea") line("💡 Idée de nouvelle compétence : " + e.text + " — dites « crée cette compétence » pour que je l'apprenne.", "log");
