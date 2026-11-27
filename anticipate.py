@@ -86,6 +86,49 @@ def scan():
     return ("Propositions : " + " | ".join(new)) if new else "Rien d'utile à anticiper pour l'instant."
 
 
+BILAN = """Fais le bilan du jour d'Aslambek en 3 parties très courtes (texte lu à voix haute, pas de markdown) :
+ce qui a marché, ce qui a coincé, quoi faire demain (3 actions max). Données du jour :
+{data}"""
+
+
+def bilan_now():
+    """Bilan du jour : échanges, missions, projets, taux de réussite."""
+    import evolve, metrics, missions
+    today = datetime.date.today().isoformat()
+    arch = pathlib.Path(__file__).parent / "data" / "archive.jsonl"
+    ex = []
+    if arch.exists():
+        for line in arch.read_text(encoding="utf-8").splitlines()[-200:]:
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            if str(e.get("t", e.get("date", ""))).startswith(today):
+                ex.append(f"- {e.get('user', '')[:120]} → {e.get('reply', '')[:120]}")
+    ms = [f"- {m['goal'][:100]} [{m['status']}]" for m in missions._read() if m.get("start", "").startswith(today)]
+    data = ("ÉCHANGES :\n" + "\n".join(ex[-25:]) + "\nMISSIONS :\n" + "\n".join(ms) + "\nPERFORMANCE : " + metrics.performance_report())[:6000]
+    if not ex and not ms:
+        return "Journée calme : aucun échange ni mission aujourd'hui."
+    out = (evolve._llm(BILAN.format(data=data), 700) or "").strip() or "Bilan impossible : aucune IA disponible."
+    d = pathlib.Path(__file__).parent / "data" / "bilans"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{today}.txt").write_text(out, encoding="utf-8")
+    return out
+
+
+def _evening():
+    """Une fois par jour à partir de 20 h 30 (avant le service de nuit)."""
+    d = _read()
+    now = datetime.datetime.now()
+    if now.strftime("%H:%M") >= "20:30" and d.get("bilan") != now.date().isoformat():
+        d["bilan"] = now.date().isoformat()
+        _write(d)
+        import wake
+        txt = bilan_now()
+        wake.push("bilan", text=txt)
+        threading.Thread(target=wake.speak, args=("Votre bilan du jour, monsieur. " + txt,), daemon=True).start()
+
+
 def decide(key, approve):
     d = _read()
     p = d["pending"].pop(key, None)
@@ -105,18 +148,23 @@ def anticipate_now():
 def start():
     def loop():
         time.sleep(20 * 60)
+        last = 0
         while True:
             try:
                 import brain, psutil
                 if brain.online() and psutil.virtual_memory().percent < 85:
-                    scan()
+                    if time.time() - last >= PERIOD:
+                        last = time.time()
+                        scan()
+                    _evening()
             except Exception:
                 pass
-            time.sleep(PERIOD)
+            time.sleep(10 * 60)
     threading.Thread(target=loop, daemon=True).start()
 
 
 SPECS = [("anticipate_now", "Analyse agenda, mails, tâches et projets et propose des missions utiles à l'avance.",
           {"type": "object", "properties": {}, "required": []})]
-FUNCS = {"anticipate_now": anticipate_now}
+SPECS.append(("bilan_now", "Bilan du jour : ce qui a marché, ce qui a coincé, quoi faire demain.", {"type": "object", "properties": {}, "required": []}))
+FUNCS = {"anticipate_now": anticipate_now, "bilan_now": bilan_now}
 DANGEROUS = set()

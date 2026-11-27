@@ -124,7 +124,7 @@ def system_prompt():
         "Auto-évolution : toutes les 6 h tu analyses tes échecs et crées/testes seul des compétences ; evolve_now lance un cycle, evolution_report montre ce qui attend, evolution_apply active (validation de l'utilisateur). "
         "Pour un livrable (synthèse, texte, plan, comparatif, recherche approfondie), utilise team_task : chercheur, rédacteur et relecteur travaillent pour toi. performance_report donne tes taux de réussite. "
         "Pour un objectif long en plusieurs étapes (préparer, organiser, suivre, rechercher sur la durée), lance mission_start : tu le mènes seul en arrière-plan ; mission_status / mission_stop. "
-        "Tu gardes le fil de chaque projet de l'utilisateur : project_note pour toute décision ou avancée, project_recall pour reprendre un projet. anticipate_now propose des missions utiles à l'avance. "
+        "Tu gardes le fil de chaque projet de l'utilisateur : project_note pour toute décision ou avancée, project_recall pour reprendre un projet. anticipate_now propose des missions utiles à l'avance ; bilan_now fait le bilan du jour. "
         "Autonomie PC : pour toute tâche dans une interface sans outil direct (appli, site, réglages, formulaire), appelle screen_task avec le but complet ; il pilote l'écran seul jusqu'au bout. screen_stop l'arrête. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
@@ -139,8 +139,8 @@ GROUPS = {
                lambda n: n.startswith(("gmail_", "calendar_"))),
     "media": (("musique", "spotify", "chanson", "volume", "pause", "lecture", "suivant", "precedent", "morceau", "titre", "artiste", "playlist", "son "),
               lambda n: n in ("media_control", "music_search")),
-    "projets": (("projet", "avance", "reprend", "ou en est", "anticip", "prevoi", "propose"),
-                lambda n: n.startswith("project_") or n == "anticipate_now"),
+    "projets": (("projet", "bilan", "journee", "avance", "reprend", "ou en est", "anticip", "prevoi", "propose"),
+                lambda n: n.startswith("project_") or n in ("anticipate_now", "bilan_now")),
     "missions": (("mission", "objectif", "arriere-plan", "arriere plan", "suivre", "organise", "prepare"),
                  lambda n: n.startswith("mission_")),
     "evolve": (("evolu", "amelior", "ameliore", "competence", "apprend", "progress"),
@@ -278,6 +278,10 @@ def ask(message):
     for backend in order:
         keep = 30 if backend in ("claude", "ollama") else 12
         msgs = [dict(m) for m in HISTORY[-keep:]]
+        done = [l for l in log if "→" in l and "IA suivante" not in l]
+        if done:   # une IA précédente a déjà agi avant de tomber en panne : ne pas refaire ses actions
+            msgs[-1]["content"] = ("[Déjà fait par une autre IA, NE PAS refaire : " + " | ".join(d[:160] for d in done[-8:])
+                                   + "]\n" + msgs[-1]["content"])
         if lessons:
             msgs[-1]["content"] = "[Leçons apprises lors de tâches similaires : " + " | ".join(lessons) + "]\n" + msgs[-1]["content"]
         st = {"backend": backend, "messages": msgs, "queue": [], "results": [], "steps": 0, "log": log}

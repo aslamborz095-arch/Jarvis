@@ -50,6 +50,8 @@ def project_note(project: str, note: str, aliases: str = ""):
         for a in [a.strip() for a in aliases.split(",") if a.strip()]:
             if a not in x["aliases"]:
                 x["aliases"].append(a)
+        if any(n["note"] == note.strip()[:600] for n in x["notes"][-10:]):
+            return f"Déjà noté dans le projet {x['name']}."
         x["notes"] = (x["notes"] + [{"t": datetime.date.today().isoformat(), "note": note.strip()[:600]}])[-80:]
         _write(p)
     return f"Noté dans le projet {x['name']}."

@@ -86,7 +86,7 @@ def summary():
     def tab(kind):
         return {n: {"appels": x["n"], "reussite_pct": round(100 * x["ok"] / max(1, x["n"])),
                     "recent_pct": round(100 * sum(x["recent"]) / max(1, len(x["recent"]))),
-                    "ms_moy": x["ms"] // max(1, x["n"])} for n, x in M[kind].items()}
+                    "ms_moy": x["ms"] // max(1, x["n"]), "derniere_erreur": x.get("last_err", "")[:160]} for n, x in M[kind].items()}
     return {"outils": tab("tools"), "cerveaux": tab("brains"), "roles": tab("roles"), "faibles": weak_tools()}
 
 
