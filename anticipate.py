@@ -106,7 +106,8 @@ def bilan_now():
             if str(e.get("t", e.get("date", ""))).startswith(today):
                 ex.append(f"- {e.get('user', '')[:120]} → {e.get('reply', '')[:120]}")
     ms = [f"- {m['goal'][:100]} [{m['status']}]" for m in missions._read() if m.get("start", "").startswith(today)]
-    data = ("ÉCHANGES :\n" + "\n".join(ex[-25:]) + "\nMISSIONS :\n" + "\n".join(ms) + "\nPERFORMANCE : " + metrics.performance_report())[:6000]
+    data = ("ÉCHANGES :\n" + "\n".join(ex[-25:]) + "\nMISSIONS :\n" + "\n".join(ms) + "\nPERFORMANCE : " + metrics.performance_report()
+            + "\nTEMPS PC : " + __import__("awareness").activity_today())[:6000]
     if not ex and not ms:
         return "Journée calme : aucun échange ni mission aujourd'hui."
     out = (evolve._llm(BILAN.format(data=data), 700) or "").strip() or "Bilan impossible : aucune IA disponible."

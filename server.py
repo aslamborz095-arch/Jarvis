@@ -101,6 +101,7 @@ def status(request: Request, x_jarvis_token: str = Header("")):
         "wake_heard": wake.STATE.get("heard"),
         "mic_fix": wake.STATE.get("mic_fix"),
         "autopilot": {k: __import__("autopilot").STATE[k] for k in ("running", "goal", "step", "last")},
+        "focus": {k: __import__("awareness").STATE[k] for k in ("app", "idle", "since")},
     }
 
 
@@ -562,6 +563,7 @@ if __name__ == "__main__":
     __import__("anticipate").start()
     __import__("routines").start()
     __import__("health").start()
+    __import__("awareness").start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     # access_log coupé : les requêtes de suivi (toutes les secondes) noyaient le journal

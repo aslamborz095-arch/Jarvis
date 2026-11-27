@@ -142,7 +142,7 @@ def system_prompt():
         "Auto-évolution : toutes les 6 h tu analyses tes échecs et crées/testes seul des compétences ; evolve_now lance un cycle, evolution_report montre ce qui attend, evolution_apply active (validation de l'utilisateur). "
         "Pour un livrable (synthèse, texte, plan, comparatif, recherche approfondie), utilise team_task : chercheur, rédacteur et relecteur travaillent pour toi. performance_report donne tes taux de réussite. "
         "Pour un objectif long en plusieurs étapes (préparer, organiser, suivre, rechercher sur la durée), lance mission_start : tu le mènes seul en arrière-plan ; mission_status / mission_stop ; pour une tâche récurrente (« chaque lundi à 8 h… »), routine_add. "
-        "Tu gardes le fil de chaque projet de l'utilisateur : project_note pour toute décision ou avancée, project_recall pour reprendre un projet. anticipate_now propose des missions utiles à l'avance ; bilan_now fait le bilan du jour ; health_check vérifie et répare ta santé (mémoire, disque, IA, micro). "
+        "Tu gardes le fil de chaque projet de l'utilisateur : project_note pour toute décision ou avancée, project_recall pour reprendre un projet. anticipate_now propose des missions utiles à l'avance ; bilan_now fait le bilan du jour ; health_check vérifie et répare ta santé (mémoire, disque, IA, micro). activity_today donne le temps passé par application. "
         "Autonomie PC : pour toute tâche dans une interface sans outil direct (appli, site, réglages, formulaire), appelle screen_task avec le but complet ; il pilote l'écran seul jusqu'au bout. screen_stop l'arrête. "
         "Tu exécutes réellement les tâches avec tes outils ; enchaîne autant d'étapes que nécessaire, "
         "vérifie le résultat, puis rends compte en une ou deux phrases. "
@@ -327,6 +327,11 @@ def ask(message):
         lessons = projects.context_for(message) + lessons   # fil des projets cités
     except Exception:
         pass
+    try:
+        import awareness
+        lessons = awareness.context(message) + lessons   # fenêtre active si « ça / cette page / l'écran »
+    except Exception:
+        pass
     for backend in order:
         if backend == "ollama" and not (ollama_ok() or start_ollama()):
             log.append("cerveau local indisponible")
@@ -369,7 +374,7 @@ def _measure(backend, ok, t0, err=""):
         pass
 
 
-READ_ONLY = {"web_search", "fetch_url", "read_file", "list_dir", "recall", "system_status", "gmail_search", "gmail_read",
+READ_ONLY = {"web_search", "activity_today", "fetch_url", "read_file", "list_dir", "recall", "system_status", "gmail_search", "gmail_read",
              "calendar_list", "project_recall", "phone_status", "phone_notifications", "tasks_list", "reminders_list",
              "routine_list", "mission_status", "performance_report"}
 
