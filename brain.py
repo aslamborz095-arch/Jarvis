@@ -64,14 +64,18 @@ def start_ollama(wait=25):
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
-COMPLEX = ("analyse", "analyser", "code", "programme", "script", "cree", "creer", "competence", "strategie", "plan", "redige",
-           "rediger", "compare", "resume", "explique", "organise", "range", "plusieurs", "ensuite", "puis", "automatis", "projet")
+# Mots qui suffisent seuls à demander une IA puissante ; les autres n'y suffisent qu'à deux
+STRONG = ("analyse", "code", "script", "strategie", "redige", "rediger", "compare", "explique", "automatis", "competence",
+          "mission", "dissert", "traduis", "corrige")
+WEAK = ("programme", "cree", "creer", "plan", "resume", "organise", "range", "plusieurs", "ensuite", "puis", "projet", "detaill")
 
 
 def level(message):
-    """simple / complexe : choisit le niveau d'IA juste nécessaire."""
+    """simple / complexe : choisit le niveau d'IA juste nécessaire (simple = IA la plus rapide d'abord)."""
     m = _plain(message)
-    return "complex" if len(m.split()) > 35 or sum(k in m for k in COMPLEX) >= 1 else "simple"
+    if len(m.split()) > 35 or any(k in m for k in STRONG) or sum(k in m for k in WEAK) >= 2:
+        return "complex"
+    return "simple"
 
 
 def chain(lvl="complex"):
@@ -274,6 +278,17 @@ def _finish(st, text):
 
 
 def ask(message):
+    try:
+        import fastpath
+        quick = fastpath.answer(message)
+    except Exception:
+        quick = None
+    if quick:   # réponse instantanée, sans IA
+        HISTORY.append({"role": "user", "content": message})
+        HISTORY.append({"role": "assistant", "content": quick})
+        del HISTORY[:-60]
+        save_history()
+        return {"reply": quick, "log": ["réponse instantanée"], "backend": "instant"}
     order = chain(level(message))
     if not order:
         return {"reply": "Mon cerveau local démarre encore. Réessayez dans une minute, monsieur.",
