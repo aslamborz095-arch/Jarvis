@@ -27,6 +27,8 @@ PLAN = """Tu es le planificateur de JARVIS (assistant sur PC Windows + télépho
 mémoire, Gmail/Agenda en lecture, état du PC, compétences apprises). Découpe cet objectif en 3 à {n} étapes concrètes,
 chacune réalisable seule par un sous-agent et vérifiable. Pas d'action irréversible (envoi, suppression, achat) :
 pour celles-ci, l'étape prépare un brouillon que l'utilisateur validera.
+Pas de mail, SMS ni brouillon sauf si l'objectif le demande : le livrable final est rendu dans la synthèse.
+Le moins d'étapes possible (une recherche groupée vaut mieux que trois).
 Objectif : {goal}
 Réponds uniquement en JSON : {{"steps": [{{"do": "consigne précise", "level": "simple|complex", "check": "critère de réussite"}}]}}"""
 
@@ -68,7 +70,7 @@ def _push(**data):
 
 def _plan(goal):
     import evolve
-    out = evolve._llm(PLAN.format(goal=goal, n=MAX_STEPS), 1500)
+    out = evolve._llm(PLAN.format(goal=goal, n=MAX_STEPS), 1000)
     m = re.search(r"\{.*\}", out or "", re.S)
     try:
         steps = json.loads(m.group(0))["steps"][:MAX_STEPS]
