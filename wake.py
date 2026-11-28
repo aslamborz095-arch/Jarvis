@@ -282,9 +282,13 @@ def _run():
         except Exception:
             pass
         noise, peaks, burst, quiet, t0, last_check = 300.0, [], [], 0, time.time(), 0.0
+        pre, open_until, cost, cost_t0 = [], 0.0, 0.0, time.time()   # porte de silence : pas d'IA sur le silence
         while True:
             c = q.get()
             r = _rms(c)
+            if time.time() - cost_t0 >= 30:                  # coût du mot d'éveil, en % d'un cœur
+                STATE["cost_pct"] = round(cost / (time.time() - cost_t0) * 100, 1)
+                cost, cost_t0 = 0.0, time.time()
             peaks = (peaks + [r])[-750:]                     # ~60 s d'historique
             ref = sorted(peaks)[int(len(peaks) * 0.95)] if len(peaks) > 20 else 500
             STATE["mic_dead"] = len(peaks) >= 750 and ref < 12
@@ -295,7 +299,19 @@ def _run():
                 c = np.clip(c.astype(np.float32) * gain, -32768, 32767).astype(np.int16)
             noise = 0.98 * noise + 0.02 * r   # bruit ambiant moyen
             STATE["level"] = round(max(STATE["level"] * 0.9, r))
+            floor = sorted(peaks)[int(len(peaks) * 0.2)] if len(peaks) > 50 else 0
+            if r * gain > max(60.0, floor * gain * 1.6) or STATE.get("force"):
+                open_until = time.time() + 2.0               # son détecté : on écoute 2 s de plus après
+            if time.time() > open_until and not STATE["busy"]:
+                pre = (pre + [c])[-10:]                      # 0,8 s gardées pour ne pas couper le début du mot
+                STATE["gated"] = STATE.get("gated", 0) + 1
+                continue
+            t1 = time.time()
+            for b in pre:                                    # pré-écoute rejouée à l'ouverture
+                model.predict(b)
+            pre = []
             score = max(model.predict(c).values())
+            cost += time.time() - t1
             STATE["score"] = round(max(STATE["score"] * 0.95, float(score)), 2)
             if STATE.pop("force", False) and not STATE["busy"]:   # geste main ouverte = écoute
                 _handle(q, noise)
