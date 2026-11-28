@@ -24,9 +24,13 @@ def _plain(s):
     return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
 
 
-def _db():
+def _db(timeout=30):
     DB.parent.mkdir(exist_ok=True)
-    c = sqlite3.connect(str(DB), timeout=30, check_same_thread=False)
+    c = sqlite3.connect(str(DB), timeout=timeout, check_same_thread=False)
+    try:
+        c.execute("PRAGMA journal_mode=WAL")   # les recherches ne sont jamais bloquées par l'indexation
+    except sqlite3.OperationalError:
+        pass
     c.execute("CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, name TEXT, mtime REAL, size INTEGER)")
     if STATE["fts"] is None:
         try:
@@ -78,7 +82,7 @@ def build(root=None, throttle=0.01):
             c.execute("INSERT OR REPLACE INTO meta VALUES('version', ?)", (str(VERSION),))
             c.commit()
         known = dict(c.execute("SELECT path, mtime FROM files"))
-        seen, new = set(), 0
+        seen, new, last_commit = set(), 0, time.time()
         for dp, dirs, fs in os.walk(root):
             dirs[:] = [d for d in dirs if d.lower() not in SKIP and not d.startswith(".")
                        and os.path.join(dp, d) != str(BASE)]          # jamais Jarvis lui-même (journaux, index…)
@@ -102,8 +106,8 @@ def build(root=None, throttle=0.01):
                 c.execute("DELETE FROM body WHERE path=?", (fp,))
                 c.execute("INSERT INTO body(path, name, content) VALUES(?,?,?)", (fp, _plain(f).replace("_", " "), body))
                 new += 1
-                if new % 200 == 0:
-                    c.commit()
+                if new % 200 == 0 or time.time() - last_commit > 20:
+                    c.commit(); last_commit = time.time()
                 if body and throttle:   # cycle de travail limité : le PC reste fluide
                     dt = time.time() - t1
                     time.sleep(max(throttle, dt * (4 if _user_active() else 1.5)))
@@ -132,7 +136,7 @@ def search(query, folder="", ext="", limit=10):
     words = [w for w in re.findall(r"\w+", _plain(query)) if len(w) > 1]
     if not words or not DB.exists():
         return []
-    c = _db()
+    c = _db(timeout=3)
     exts = tuple("." + e.strip(" .").lower() for e in ext.split(",") if e.strip(" ."))
     pre = str(folder or "")
     lim = max(1, min(int(limit or 10), 30)) * 4
