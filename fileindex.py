@@ -52,6 +52,14 @@ def _text(p):
     return ""
 
 
+def _user_active():
+    try:
+        import awareness
+        return awareness.STATE.get("idle", 999) < 120 and awareness.STATE.get("app") != "Écran verrouillé"
+    except Exception:
+        return False
+
+
 def build(root=None, throttle=0.01):
     """Met l'index à jour (incrémental). Renvoie un court bilan."""
     if not _lock.acquire(blocking=False):
@@ -76,7 +84,10 @@ def build(root=None, throttle=0.01):
                 seen.add(fp)
                 if known.get(fp) == st.st_mtime:
                     continue
+                if new % 50 == 49:
+                    time.sleep(0.2)
                 p = pathlib.Path(fp)
+                t1 = time.time()
                 body = _text(p) if st.st_size < MAX_SIZE and p.suffix.lower() in (TEXT_EXT | DOC_EXT) else ""
                 c.execute("INSERT OR REPLACE INTO files VALUES(?,?,?,?)", (fp, f, st.st_mtime, st.st_size))
                 c.execute("DELETE FROM body WHERE path=?", (fp,))
@@ -84,8 +95,9 @@ def build(root=None, throttle=0.01):
                 new += 1
                 if new % 200 == 0:
                     c.commit()
-                if body and throttle:
-                    time.sleep(throttle)
+                if body and throttle:   # cycle de travail limité : le PC reste fluide
+                    dt = time.time() - t1
+                    time.sleep(max(throttle, dt * (4 if _user_active() else 1.5)))
         gone = [k for k in known if k not in seen]
         for k in gone:
             c.execute("DELETE FROM files WHERE path=?", (k,))
@@ -142,8 +154,10 @@ def search(query, folder="", ext="", limit=10):
 
 def index_now():
     """Met à jour tout de suite l'index des fichiers (recherche instantanée)."""
+    if STATE["running"]:
+        return "Indexation déjà en cours."
     threading.Thread(target=build, daemon=True).start()
-    return "Indexation lancée en arrière-plan." if not STATE["running"] else "Indexation déjà en cours."
+    return "Indexation lancée en arrière-plan (quelques minutes)."
 
 
 def index_status():
