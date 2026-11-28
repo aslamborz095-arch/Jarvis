@@ -229,7 +229,7 @@ const tmpCol = new THREE.Color();
 let last = 0, t0 = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  if (document.hidden || now - last < (LOW ? 33 : 22)) return;
+  if (document.hidden || now - last < (window.FX_SLEEP && (FX.state || "idle") === "idle" ? 250 : LOW ? 33 : 22)) return;
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const t = (now - t0) / 1000, st = FX.state || "idle", lvl = FX.level || 0;
   const sp = st === "thinking" ? 3.5 : st === "listening" ? 1.6 : 1;

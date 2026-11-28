@@ -152,6 +152,14 @@ function chip(id, text, cls) { const c = $(id); c.textContent = text; c.classNam
 async function poll() {
   try {
     const s = await api("/api/status"); lastStatus = s; setSolo(false);
+    // Veille de l'animation : sur le PC lui-même, écran verrouillé ou inactif > 3 min → 4 images/s (processeur libéré)
+    const f = s.focus || {}, local = /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
+    window.FX_SLEEP = local && (f.app === "Écran verrouillé" || (f.idle || 0) > 180);
+    // Nouvelle version installée : l'interface se recharge seule (si personne n'est en train de parler/écrire)
+    if (s.version) {
+      if (window.__ver && window.__ver !== s.version && (window.FX?.state || "idle") === "idle" && !document.activeElement?.value) location.reload();
+      window.__ver = s.version;
+    }
     bar("cpu", s.cpu); bar("ram", s.ram); bar("bat", s.battery, 101);
     window.FX && FX.pushCpu(s.cpu);
     chip("st-net", s.online ? "EN LIGNE" : "HORS LIGNE", s.online ? "ok" : "warn");
@@ -163,6 +171,7 @@ async function poll() {
   } catch (e) { if (e.message !== "auth") setSolo(true); }
 }
 setInterval(poll, 5000); poll();
+["pointermove", "keydown", "touchstart"].forEach((e) => addEventListener(e, () => { window.FX_SLEEP = false; }, { passive: true }));
 
 async function pollPhone() {
   if (SOLO) return {};

@@ -158,7 +158,7 @@
   let last = 0;
   function loop(t) {
     requestAnimationFrame(loop);
-    if (document.hidden || t - last < STEP) return;
+    if (document.hidden || t - last < (window.FX_SLEEP && FX.state === "idle" ? 250 : STEP)) return;
     last = t;
     const target = COLORS[FX.state] || COLORS.idle;
     for (let i = 0; i < 3; i++) col[i] += (target[i] - col[i]) * 0.08;
