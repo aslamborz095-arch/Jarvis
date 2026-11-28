@@ -62,10 +62,10 @@ def check(repair=True):
     try:
         import brain, httpx
         if ram > 88 and brain.online() and brain.ollama_ok():
-            ps = httpx.get(f"{brain.OLLAMA_URL}/api/ps", timeout=3).json().get("models", [])
+            ps = brain.local_http().get(f"{brain.OLLAMA_URL}/api/ps", timeout=3).json().get("models", [])
             if ps and repair:
                 for m in ps:
-                    httpx.post(f"{brain.OLLAMA_URL}/api/generate", timeout=20, json={"model": m["name"], "keep_alive": 0})
+                    brain.local_http().post(f"{brain.OLLAMA_URL}/api/generate", timeout=20, json={"model": m["name"], "keep_alive": 0})
                 acts.append("cerveau local déchargé (RAM saturée)")
     except Exception:
         pass

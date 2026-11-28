@@ -139,10 +139,21 @@ def _slim(tools_spec):
     return out
 
 
+_HTTP = [None]
+
+
+def _client():
+    """Client réutilisé (connexions gardées ouvertes : moins de processeur et ~100 ms gagnées par appel)."""
+    import httpx
+    if _HTTP[0] is None:
+        _HTTP[0] = httpx.Client(timeout=httpx.Timeout(120, connect=10))
+    return _HTTP[0]
+
+
 def _post(p, model, messages, tools_spec, max_tokens, _retry=False):
     import httpx
     try:
-        r = httpx.post(p["base"].rstrip("/") + "/chat/completions", timeout=120,
+        r = _client().post(p["base"].rstrip("/") + "/chat/completions", timeout=120,
                        headers={"Authorization": f"Bearer {p['key']}", "HTTP-Referer": "http://127.0.0.1:8765", "X-Title": "Jarvis"},
                        json={k: v for k, v in {"model": model, "messages": messages, "tools": tools_spec,
                                                "max_tokens": max_tokens}.items() if v is not None})

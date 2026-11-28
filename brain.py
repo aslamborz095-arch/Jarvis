@@ -50,11 +50,28 @@ def online():
     return ok
 
 
-def ollama_ok():
+_LOCAL = [None]
+_OLL = {"t": 0.0, "ok": False}
+
+
+def local_http():
+    """Client HTTP réutilisé pour Ollama (créer un client coûte un contexte SSL : ~50 ms de processeur)."""
+    if _LOCAL[0] is None:
+        _LOCAL[0] = httpx.Client(timeout=httpx.Timeout(900, connect=3))
+    return _LOCAL[0]
+
+
+def ollama_ok(max_age=10):
+    """Ollama répond-il ? (résultat gardé max_age s : /api/status est appelé très souvent)"""
+    import time as _t
+    if _t.time() - _OLL["t"] < max_age:
+        return _OLL["ok"]
     try:
-        return httpx.get(f"{OLLAMA_URL}/api/tags", timeout=2).status_code == 200
+        ok = local_http().get(f"{OLLAMA_URL}/api/tags", timeout=2).status_code == 200
     except Exception:
-        return False
+        ok = False
+    _OLL.update(t=_t.time(), ok=ok)
+    return ok
 
 
 def start_ollama(wait=25):
@@ -68,7 +85,7 @@ def start_ollama(wait=25):
         return False
     for _ in range(wait):
         time.sleep(1)
-        if ollama_ok():
+        if ollama_ok(0):
             return True
     return False
 
@@ -229,7 +246,7 @@ def _call_model(st):
             calls.append({"id": c["id"], "name": c["function"]["name"], "args": args})
         text = (msg.get("content") or "").strip()
     else:
-        r = httpx.post(f"{OLLAMA_URL}/api/chat", timeout=600, json={
+        r = local_http().post(f"{OLLAMA_URL}/api/chat", timeout=600, json={
             "model": OLLAMA_MODEL, "stream": False, "tools": _ollama_tools(), **OLLAMA_OPTS,
             "messages": [{"role": "system", "content": system_prompt()}] + st["messages"]}).json()
         msg = r.get("message", {})
@@ -467,10 +484,10 @@ def warmup():
             if online():
                 # En ligne, les cerveaux cloud répondent : on décharge le modèle local (≈2,3 Go de RAM rendus)
                 if ollama_ok():
-                    httpx.post(f"{OLLAMA_URL}/api/generate", timeout=30, json={"model": OLLAMA_MODEL, "keep_alive": 0})
+                    local_http().post(f"{OLLAMA_URL}/api/generate", timeout=30, json={"model": OLLAMA_MODEL, "keep_alive": 0})
                 return
             if ollama_ok() or start_ollama():
-                httpx.post(f"{OLLAMA_URL}/api/chat", timeout=900, json={
+                local_http().post(f"{OLLAMA_URL}/api/chat", timeout=900, json={
                     "model": OLLAMA_MODEL, "stream": False, "tools": _ollama_tools(), **OLLAMA_OPTS,
                     "messages": [{"role": "system", "content": system_prompt()},
                                  {"role": "user", "content": "ok"}]})
