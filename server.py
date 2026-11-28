@@ -108,9 +108,25 @@ def status(request: Request, x_jarvis_token: str = Header("")):
 
 
 @app.get("/api/top")
-def top(request: Request, cpu: int = 0, x_jarvis_token: str = Header("")):
-    """Programmes qui consomment le plus de mémoire (ou de processeur avec ?cpu=1) — diagnostic PC lent."""
+def top(request: Request, cpu: int = 0, threads: int = 0, x_jarvis_token: str = Header("")):
+    """Programmes qui consomment le plus de mémoire (?cpu=1 : processeur ; ?threads=1 : fils de Jarvis) — diagnostic PC lent."""
     auth(x_jarvis_token, request)
+    if threads:
+        import time, threading, sys, traceback
+        me = psutil.Process()
+        a = {t.id: t.user_time + t.system_time for t in me.threads()}
+        time.sleep(2.0)
+        b = {t.id: t.user_time + t.system_time for t in me.threads()}
+        names = {t.native_id: t.name for t in threading.enumerate()}
+        frames = sys._current_frames()
+        where = {}
+        for t in threading.enumerate():
+            f = frames.get(t.ident)
+            if f:
+                st = traceback.extract_stack(f)[-3:]
+                where[t.native_id] = " < ".join(f"{pathlib.Path(x.filename).stem}:{x.name}" for x in reversed(st))
+        rows = sorted(((round((b[i] - a.get(i, 0)) / 2.0 * 100, 1), names.get(i, f"natif {i}"), where.get(i, "")) for i in b), reverse=True)
+        return [{"cpu_pct_coeur": c, "fil": n, "ou": w} for c, n, w in rows[:10] if c > 0.2]
     if cpu:
         import time
         procs = list(psutil.process_iter(["name"]))
