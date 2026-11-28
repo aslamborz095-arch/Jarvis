@@ -48,8 +48,49 @@ def open_target(target: str):
     return f"Ouvert : {target}"
 
 
+def _doc_text(p):
+    """Texte d'un PDF / Word / Excel / PowerPoint (bibliothèques facultatives)."""
+    ext = p.suffix.lower()
+    if ext == ".pdf":
+        from pypdf import PdfReader
+        r = PdfReader(str(p))
+        return f"[PDF, {len(r.pages)} pages]\n" + "\n".join((pg.extract_text() or "") for pg in r.pages[:40])
+    if ext == ".docx":
+        import docx
+        d = docx.Document(str(p))
+        return "\n".join(x.text for x in d.paragraphs if x.text.strip())
+    if ext in (".xlsx", ".xlsm"):
+        import openpyxl
+        wb = openpyxl.load_workbook(str(p), read_only=True, data_only=True)
+        out = []
+        for ws in wb.worksheets[:5]:
+            out.append(f"[Feuille {ws.title}]")
+            for row in ws.iter_rows(max_row=200, values_only=True):
+                if any(c is not None for c in row):
+                    out.append(" | ".join("" if c is None else str(c) for c in row))
+        return "\n".join(out)
+    if ext == ".pptx":
+        from pptx import Presentation
+        out = []
+        for i, sl in enumerate(Presentation(str(p)).slides, 1):
+            out.append(f"[Diapo {i}] " + " ".join(sh.text_frame.text for sh in sl.shapes if sh.has_text_frame))
+        return "\n".join(out)
+    return None
+
+
 def read_file(path: str):
-    return _trunc(pathlib.Path(os.path.expanduser(path)).read_text(encoding="utf-8", errors="replace"))
+    """Lit un fichier texte, PDF, Word, Excel ou PowerPoint ; un dossier → son contenu."""
+    p = pathlib.Path(os.path.expanduser(path.strip().strip('"')))
+    if p.is_dir():
+        return f"{p} est un dossier :\n" + list_dir(str(p))
+    if not p.exists():
+        near = [x.name for x in p.parent.iterdir() if p.stem.lower()[:4] in x.name.lower()][:10] if p.parent.is_dir() else []
+        return f"Fichier introuvable : {p}" + (". Proches : " + ", ".join(near) if near else "")
+    try:
+        t = _doc_text(p)
+    except ImportError as e:
+        return f"Lecture de {p.suffix} impossible : module manquant ({e.name}). Il s'installera à la prochaine mise à jour."
+    return _trunc(t if t is not None else p.read_text(encoding="utf-8", errors="replace"))
 
 
 def write_file(path: str, content: str):
@@ -152,7 +193,7 @@ S = {"type": "string"}
 SPECS = [
     ("run_command", "Exécute une commande PowerShell (Windows) ou bash sur le PC. Pour toute tâche système : installer, gérer fichiers, lancer scripts, réglages.", _p({"command": S})),
     ("open_target", "Ouvre une application (ex: 'notepad', 'spotify:'), un fichier, un dossier ou une URL.", _p({"target": S})),
-    ("read_file", "Lit un fichier texte.", _p({"path": S})),
+    ("read_file", "Lit un fichier (texte, PDF, Word, Excel, PowerPoint) ; un dossier renvoie son contenu.", _p({"path": S})),
     ("write_file", "Crée ou remplace un fichier texte.", _p({"path": S, "content": S})),
     ("list_dir", "Liste un dossier.", _p({"path": S})),
     ("system_status", "Heure, CPU, RAM, disque, batterie.", _p({}, [])),

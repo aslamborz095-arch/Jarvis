@@ -18,3 +18,8 @@ pillow
 mediapipe
 opencv-python
 pycaw
+# lecture de documents (read_file)
+pypdf
+python-docx
+openpyxl
+python-pptx
