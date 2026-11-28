@@ -167,7 +167,13 @@ def index_status():
         return "Indexation en cours…"
     if not s["last"]:
         return "Index pas encore construit (1er passage 3 min après le démarrage)." + (f" Erreur : {s['error']}" if s["error"] else "")
-    return f"Index du {s['last'].replace('T', ' ')} : {s['files']} fichiers, {s['indexed']} mis à jour au dernier passage."
+    try:
+        c = _db(); n = c.execute("SELECT count(*) FROM body").fetchone()[0]
+        w = c.execute("SELECT count(*) FROM body WHERE length(content) > 0").fetchone()[0]; c.close()
+    except Exception as e:
+        n = w = f"erreur {e}"
+    return (f"Index du {s['last'].replace('T', ' ')} : {s['files']} fichiers, {s['indexed']} mis à jour au dernier passage ; "
+            f"{n} entrées dont {w} avec contenu ; recherche plein texte {'FTS5' if s['fts'] else 'simple'}.")
 
 
 def start():

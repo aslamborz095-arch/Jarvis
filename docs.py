@@ -44,12 +44,13 @@ def search_in_files(query: str, folder: str = "~", ext: str = "", limit: int = 1
             hits = fileindex.search(query, "" if str(folder).strip() in ("", "~") else str(root), ext, limit)
             if hits:
                 return f"{len(hits)} fichier(s) pour « {query} » (index) :\n" + "\n".join(f"{p}\n   « …{s}… »" for p, s in hits)
-    except Exception:
-        pass
+            print(f"[index] aucun résultat pour {query!r} (dossier {folder!r}) → lecture directe", flush=True)
+    except Exception as e:
+        print(f"[index] recherche en erreur : {type(e).__name__}: {e}", flush=True)
     exts = {"." + e.strip(" .").lower() for e in ext.split(",") if e.strip(" .")} or (TEXT_EXT | DOC_EXT)
     files = []
     for dp, dirs, fs in os.walk(root):
-        dirs[:] = [d for d in dirs if d.lower() not in SKIP and not d.startswith(".")]
+        dirs[:] = [d for d in dirs if d.lower() not in SKIP and not d.startswith(".") and os.path.join(dp, d) != str(BASE)]
         for f in fs:
             fp = os.path.join(dp, f)
             if os.path.splitext(f)[1].lower() in exts:
