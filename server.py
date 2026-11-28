@@ -96,6 +96,7 @@ def status(request: Request, x_jarvis_token: str = Header("")):
         "wake_level": wake.STATE.get("level"),
         "wake_score": wake.STATE.get("score"),
         "wake_cost_pct": wake.STATE.get("cost_pct"),
+        "wake_stt_per_min": wake.STATE.get("stt_rate"),
         "wake_error": wake.STATE["error"],
         "wake_dead": wake.STATE.get("mic_dead"),
         "wake_probe": wake.STATE.get("probe"),

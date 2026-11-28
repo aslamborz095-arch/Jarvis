@@ -288,6 +288,7 @@ def _run():
             r = _rms(c)
             if time.time() - cost_t0 >= 30:                  # coût du mot d'éveil, en % d'un cœur
                 STATE["cost_pct"] = round(cost / (time.time() - cost_t0) * 100, 1)
+                STATE["stt_rate"] = STATE.pop("stt_checks", 0) * 2          # vérifications Whisper par minute
                 cost, cost_t0 = 0.0, time.time()
             peaks = (peaks + [r])[-750:]                     # ~60 s d'historique
             ref = sorted(peaks)[int(len(peaks) * 0.95)] if len(peaks) > 20 else 500
@@ -331,9 +332,11 @@ def _run():
                 burst.append(c); quiet += 1
                 if quiet >= 5:                                # 0,4 s de silence = fin de phrase
                     seg, burst, quiet = burst, [], 0
-                    if 4 <= len(seg) <= 75 and time.time() - last_check > 1.0:
+                    if 5 <= len(seg) <= 75 and time.time() - last_check > 2.5:
                         last_check = time.time()
                         text = stt.quick(np.concatenate(seg))
+                        cost += time.time() - last_check          # Whisper compte dans le coût mesuré
+                        STATE["stt_checks"] = STATE.get("stt_checks", 0) + 1
                         m = NAME.search(text or "") if not HALLU.search(text or "") else None
                         if m:
                             STATE["heard"] = text
