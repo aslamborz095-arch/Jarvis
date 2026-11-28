@@ -38,6 +38,14 @@ def search_in_files(query: str, folder: str = "~", ext: str = "", limit: int = 1
     if not words:
         return "Précise les mots à chercher."
     root = tools._path(folder)
+    try:   # index des fichiers (instantané, tout le dossier personnel)
+        import fileindex
+        if fileindex.ready():
+            hits = fileindex.search(query, "" if str(folder).strip() in ("", "~") else str(root), ext, limit)
+            if hits:
+                return f"{len(hits)} fichier(s) pour « {query} » (index) :\n" + "\n".join(f"{p}\n   « …{s}… »" for p, s in hits)
+    except Exception:
+        pass
     exts = {"." + e.strip(" .").lower() for e in ext.split(",") if e.strip(" .")} or (TEXT_EXT | DOC_EXT)
     files = []
     for dp, dirs, fs in os.walk(root):

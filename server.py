@@ -566,6 +566,7 @@ if __name__ == "__main__":
     __import__("routines").start()
     __import__("health").start()
     __import__("awareness").start()
+    __import__("fileindex").start()
     if os.getenv("WAKE_WORD", "true").lower() == "true":
         wake.start()
     # access_log coupé : les requêtes de suivi (toutes les secondes) noyaient le journal
