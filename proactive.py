@@ -101,6 +101,19 @@ def reminders_list():
     return "\n".join(f"{r['when'].replace('T', ' ')} — {r['text']}" for r in p) or "Aucun rappel."
 
 
+def reminder_remove(match: str):
+    """Supprime les rappels à venir dont le texte ou l'heure contient `match`."""
+    m = (match or "").strip().lower()
+    if not m:
+        return "Précise le rappel à supprimer."
+    r = _load()
+    gone = [x for x in r if not x.get("done") and (m in x["text"].lower() or m in x["when"].replace("T", " "))]
+    if not gone:
+        return "Aucun rappel ne correspond. " + reminders_list()
+    _save([x for x in r if x not in gone])
+    return f"{len(gone)} rappel(s) supprimé(s) : " + " ; ".join(x["text"] for x in gone)
+
+
 def start():
     def loop():
         while True:
@@ -189,8 +202,10 @@ SPECS = [
     ("remind", "Crée un rappel parlé ponctuel (pas pour les pauses écran : pause_set). when = AAAA-MM-JJTHH:MM (heure de Paris) ou +30m / +2h.",
      {"type": "object", "properties": {"text": S, "when": S}, "required": ["text", "when"]}),
     ("reminders_list", "Liste les rappels à venir.", {"type": "object", "properties": {}, "required": []}),
+    ("reminder_remove", "Supprime un ou des rappels à venir (texte partiel ou heure « AAAA-MM-JJ HH:MM »).",
+     {"type": "object", "properties": {"match": S}, "required": ["match"]}),
     ("task_add", "Ajoute une tâche à la liste (due = AAAA-MM-JJ facultatif).", {"type": "object", "properties": {"text": S, "due": S}, "required": ["text"]}),
     ("task_done", "Coche une tâche (texte partiel).", {"type": "object", "properties": {"text": S}, "required": ["text"]}),
     ("tasks_list", "Liste les tâches en cours.", {"type": "object", "properties": {}, "required": []}),
 ]
-FUNCS = {"briefing": briefing, "remind": remind, "reminders_list": reminders_list, "task_add": task_add, "task_done": task_done, "tasks_list": tasks_list}
+FUNCS = {"briefing": briefing, "remind": remind, "reminder_remove": reminder_remove, "reminders_list": reminders_list, "task_add": task_add, "task_done": task_done, "tasks_list": tasks_list}
