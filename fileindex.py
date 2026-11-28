@@ -176,7 +176,7 @@ def index_status():
     except Exception as e:
         n = w = f"erreur {e}"
     return (f"Index du {s['last'].replace('T', ' ')} : {s['files']} fichiers, {s['indexed']} mis à jour au dernier passage ; "
-            f"{n} entrées dont {w} avec contenu ; recherche plein texte {'FTS5' if s['fts'] else 'simple'}.")
+            f"{n} entrées dont {w} avec contenu ; recherche plein texte {'FTS5' if STATE['fts'] else 'simple'}.")
 
 
 def start():
