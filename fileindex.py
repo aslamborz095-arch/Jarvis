@@ -165,6 +165,9 @@ def index_status():
     s = STATE
     if s["running"]:
         return "Indexation en cours…"
+    if not s["last"] and DB.exists() and DB.stat().st_size > 50_000:
+        s = dict(s, last=time.strftime("%Y-%m-%dT%H:%M", time.localtime(DB.stat().st_mtime)), files="?", indexed="?")
+        _db().close()
     if not s["last"]:
         return "Index pas encore construit (1er passage 3 min après le démarrage)." + (f" Erreur : {s['error']}" if s["error"] else "")
     try:
