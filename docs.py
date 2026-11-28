@@ -55,7 +55,12 @@ def search_in_files(query: str, folder: str = "~", ext: str = "", limit: int = 1
             break
     files.sort(reverse=True)
     t0, hits, seen = time.time(), [], 0
+    fname = lambda f: _plain(os.path.basename(f)).replace("_", " ").replace("-", " ")
+    named = [fp for _, fp in files if all(w in fname(fp) for w in words)][:10]   # nom du fichier : gratuit
+    hits += [f"{fp}\n   (mots trouvés dans le nom)" for fp in named]
     for _, fp in files[:400]:
+        if fp in named:
+            continue
         if time.time() - t0 > 15 or len(hits) >= max(1, min(int(limit or 10), 30)):
             break
         seen += 1
