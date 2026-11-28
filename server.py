@@ -123,7 +123,7 @@ def top(request: Request, cpu: int = 0, threads: int = 0, x_jarvis_token: str = 
         for t in threading.enumerate():
             f = frames.get(t.ident)
             if f:
-                st = traceback.extract_stack(f)[-3:]
+                st = traceback.extract_stack(f)[-14:]
                 where[t.native_id] = " < ".join(f"{pathlib.Path(x.filename).stem}:{x.name}" for x in reversed(st))
         rows = sorted(((round((b[i] - a.get(i, 0)) / 2.0 * 100, 1), names.get(i, f"natif {i}"), where.get(i, "")) for i in b), reverse=True)
         return [{"cpu_pct_coeur": c, "fil": n, "ou": w} for c, n, w in rows[:10] if c > 0.2]
