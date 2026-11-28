@@ -48,6 +48,54 @@ def open_target(target: str):
     return f"Ouvert : {target}"
 
 
+HOME = pathlib.Path.home()
+ALIASES = {"téléchargements": "Downloads", "telechargements": "Downloads", "downloads": "Downloads",
+           "documents": "Documents", "mes documents": "Documents", "bureau": "Desktop", "desktop": "Desktop",
+           "images": "Pictures", "photos": "Pictures", "pictures": "Pictures", "vidéos": "Videos", "videos": "Videos",
+           "musique": "Music", "music": "Music"}
+
+
+def _path(path):
+    """Chemin réel : ~, noms français (Téléchargements, Bureau…), mauvais nom d'utilisateur corrigé."""
+    raw = (path or "~").strip().strip('"').strip("'")
+    first, _, rest = raw.replace("\\", "/").partition("/")
+    if first.lower() in ALIASES:
+        raw = str(HOME / ALIASES[first.lower()] / rest)
+    p = pathlib.Path(os.path.expanduser(raw))
+    if not p.exists():
+        m = re.match(r"(?i)^[a-z]:[\\/]users[\\/][^\\/]+[\\/]?(.*)$", str(p))
+        if m and (HOME / m.group(1)).exists():
+            p = HOME / m.group(1)
+    if not p.exists() and p.parent.exists():   # « Téléchargements » au milieu d'un chemin
+        q = p.parent / ALIASES.get(p.name.lower(), p.name)
+        p = q if q.exists() else p
+    return p
+
+
+def find_files(name: str = "", folder: str = "~", ext: str = "", limit: int = 20):
+    """Cherche des fichiers par nom partiel et/ou extension (ex. ext="pdf,docx"), récent en premier."""
+    import time
+    root, t0 = _path(folder), time.time()
+    exts = {"." + e.strip(" .").lower() for e in ext.split(",") if e.strip(" .")}
+    nm, hits = (name or "").lower(), []
+    skip = {"appdata", "node_modules", ".git", ".venv", "$recycle.bin", "windows", "program files", "program files (x86)"}
+    for dp, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d.lower() not in skip and not d.startswith(".")]
+        for f in files:
+            if (not nm or nm in f.lower()) and (not exts or os.path.splitext(f)[1].lower() in exts):
+                fp = os.path.join(dp, f)
+                try:
+                    hits.append((os.path.getmtime(fp), fp))
+                except OSError:
+                    pass
+        if time.time() - t0 > 8 or len(hits) > 2000:
+            break
+    if not hits:
+        return f"Aucun fichier trouvé dans {root}."
+    hits.sort(reverse=True)
+    return f"{len(hits)} trouvé(s) dans {root} (plus récents) :\n" + "\n".join(h[1] for h in hits[:max(1, min(int(limit or 20), 50))])
+
+
 def _doc_text(p):
     """Texte d'un PDF / Word / Excel / PowerPoint (bibliothèques facultatives)."""
     ext = p.suffix.lower()
@@ -80,7 +128,7 @@ def _doc_text(p):
 
 def read_file(path: str):
     """Lit un fichier texte, PDF, Word, Excel ou PowerPoint ; un dossier → son contenu."""
-    p = pathlib.Path(os.path.expanduser(path.strip().strip('"')))
+    p = _path(path)
     if p.is_dir():
         return f"{p} est un dossier :\n" + list_dir(str(p))
     if not p.exists():
@@ -101,7 +149,7 @@ def write_file(path: str, content: str):
 
 
 def list_dir(path: str = "~"):
-    p = pathlib.Path(os.path.expanduser(path))
+    p = _path(path)
     items = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))[:300]
     return "\n".join(("📁 " if i.is_dir() else "📄 ") + i.name for i in items)
 
@@ -193,6 +241,8 @@ S = {"type": "string"}
 SPECS = [
     ("run_command", "Exécute une commande PowerShell (Windows) ou bash sur le PC. Pour toute tâche système : installer, gérer fichiers, lancer scripts, réglages.", _p({"command": S})),
     ("open_target", "Ouvre une application (ex: 'notepad', 'spotify:'), un fichier, un dossier ou une URL.", _p({"target": S})),
+    ("find_files", "Cherche des fichiers sur le PC par nom partiel et/ou extension (ext=\"pdf,docx\"), dans folder (défaut : dossier personnel ; accepte Téléchargements, Documents, Bureau…).",
+     {"type": "object", "properties": {"name": S, "folder": S, "ext": S, "limit": {"type": "integer"}}, "required": []}),
     ("read_file", "Lit un fichier (texte, PDF, Word, Excel, PowerPoint) ; un dossier renvoie son contenu.", _p({"path": S})),
     ("write_file", "Crée ou remplace un fichier texte.", _p({"path": S, "content": S})),
     ("list_dir", "Liste un dossier.", _p({"path": S})),
