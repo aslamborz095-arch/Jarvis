@@ -106,9 +106,25 @@ def status(request: Request, x_jarvis_token: str = Header("")):
 
 
 @app.get("/api/top")
-def top(request: Request, x_jarvis_token: str = Header("")):
-    """Programmes qui consomment le plus de mémoire (diagnostic PC lent)."""
+def top(request: Request, cpu: int = 0, x_jarvis_token: str = Header("")):
+    """Programmes qui consomment le plus de mémoire (ou de processeur avec ?cpu=1) — diagnostic PC lent."""
     auth(x_jarvis_token, request)
+    if cpu:
+        import time
+        procs = list(psutil.process_iter(["name"]))
+        for p in procs:
+            try:
+                p.cpu_percent(None)
+            except Exception:
+                pass
+        time.sleep(1.5)
+        agg = {}
+        for p in procs:
+            try:
+                agg[p.info["name"]] = agg.get(p.info["name"], 0) + p.cpu_percent(None) / psutil.cpu_count()
+            except Exception:
+                pass
+        return [{"name": n, "cpu": round(v, 1)} for n, v in sorted(agg.items(), key=lambda x: -x[1])[:12]]
     agg = {}
     for p in psutil.process_iter(["name", "memory_info"]):
         try:
