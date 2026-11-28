@@ -86,10 +86,32 @@ def state():
 
 
 # Modèles de secours chez le même fournisseur : chaque modèle a son propre quota gratuit
-ALTS = {"groq": ["llama-3.3-70b-versatile", "openai/gpt-oss-20b", "qwen/qwen3-32b"],
+ALTS = {"groq": ["openai/gpt-oss-20b", "qwen/qwen3.6-27b", "qwen/qwen3-32b"],
         "gemini": ["gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
         "openrouter": ["meta-llama/llama-3.3-70b-instruct:free", "deepseek/deepseek-chat-v3.1:free"]}
 MODEL_COOL = {}   # (fournisseur, modèle) -> jusqu'à quand
+DISCOVERED = {}   # fournisseur -> (date, [modèles actifs trouvés via /models])
+SKIP_MODEL = ("whisper", "tts", "embed", "guard", "vision", "image", "audio", "orpheus", "playai", "compound", "moderation")
+
+
+def discover(p):
+    """Modèles texte actifs du fournisseur (GET /models), 1 fois par 24 h : remplace seul les modèles retirés."""
+    now = time.time()
+    t, ms = DISCOVERED.get(p["id"], (0, []))
+    if now - t < 24 * 3600:
+        return ms
+    ms = []
+    try:
+        import httpx
+        r = httpx.get(p["base"].rstrip("/") + "/models", timeout=15, headers={"Authorization": f"Bearer {p['key']}"})
+        ids = [m.get("id", "") for m in r.json().get("data", [])] if r.status_code == 200 else []
+        ms = [i for i in ids if i and not any(k in i.lower() for k in SKIP_MODEL)
+              and (p["id"] != "openrouter" or i.endswith(":free"))][:6]
+        print(f"[providers] {p['id']} modèles découverts : {', '.join(ms) or 'aucun'}", flush=True)
+    except Exception as e:
+        print(f"[providers] {p['id']} découverte impossible : {e}", flush=True)
+    DISCOVERED[p["id"]] = (now, ms)
+    return ms
 
 
 def _loosen(tools_spec):
@@ -130,8 +152,15 @@ def call(p, messages, tools_spec, max_tokens=1200):
     """Appelle le modèle principal ; s'il a atteint son quota (429), essaie les modèles de secours du même fournisseur."""
     now = time.time()
     models = [p["model"]] + [m for m in ALTS.get(p["id"], []) if m != p["model"]]
-    last = None
-    for m in models:
+    last, seen404, found, i = None, False, False, 0
+    while True:
+        if i >= len(models):
+            if seen404 and not found:   # un modèle retiré : on lit la liste réelle des modèles actifs
+                found = True
+                models += [x for x in discover(p) if x not in models]
+            if i >= len(models):
+                break
+        m = models[i]; i += 1
         if MODEL_COOL.get((p["id"], m), 0) > now:
             continue
         try:
@@ -141,6 +170,7 @@ def call(p, messages, tools_spec, max_tokens=1200):
             if e.status == 429:
                 MODEL_COOL[(p["id"], m)] = now + min(float(e.retry_after or 0) or 600, 6 * 3600)
             elif e.status == 404 or (e.status in (400, 422) and m != p["model"]):
+                seen404 = seen404 or e.status == 404
                 MODEL_COOL[(p["id"], m)] = now + 24 * 3600   # modèle inexistant/retiré ou incompatible → suivant
                 print(f"[providers] {p['id']} modèle {m} écarté 24 h ({e.status}) : {str(e)[:200]}", flush=True)
             else:
