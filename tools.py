@@ -96,13 +96,13 @@ def find_files(name: str = "", folder: str = "~", ext: str = "", limit: int = 20
     return f"{len(hits)} trouvé(s) dans {root} (plus récents) :\n" + "\n".join(h[1] for h in hits[:max(1, min(int(limit or 20), 50))])
 
 
-def _doc_text(p):
+def _doc_text(p, pages=40):
     """Texte d'un PDF / Word / Excel / PowerPoint (bibliothèques facultatives)."""
     ext = p.suffix.lower()
     if ext == ".pdf":
         from pypdf import PdfReader
         r = PdfReader(str(p))
-        return f"[PDF, {len(r.pages)} pages]\n" + "\n".join((pg.extract_text() or "") for pg in r.pages[:40])
+        return f"[PDF, {len(r.pages)} pages]\n" + "\n".join((pg.extract_text() or "") for pg in r.pages[:pages])
     if ext == ".docx":
         import docx
         d = docx.Document(str(p))
@@ -113,7 +113,7 @@ def _doc_text(p):
         out = []
         for ws in wb.worksheets[:5]:
             out.append(f"[Feuille {ws.title}]")
-            for row in ws.iter_rows(max_row=200, values_only=True):
+            for row in ws.iter_rows(max_row=200 if pages <= 40 else 2000, values_only=True):
                 if any(c is not None for c in row):
                     out.append(" | ".join("" if c is None else str(c) for c in row))
         return "\n".join(out)
@@ -255,9 +255,9 @@ SPECS = [
 ]
 FUNCS = {n: globals()[n] for n, _, _ in SPECS}
 
-import phone, vision, google_apps, media, learning, proactive, autopilot, hands_native, evolve, metrics, team, missions, projects, anticipate, routines, health, awareness
-SPECS += hands_native.SPECS + phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS + evolve.SPECS + metrics.SPECS + team.SPECS + missions.SPECS + projects.SPECS + anticipate.SPECS + routines.SPECS + health.SPECS + awareness.SPECS
-for m in (hands_native, phone, vision, autopilot, google_apps, media, learning, proactive, evolve, metrics, team, missions, projects, anticipate, routines, health, awareness):
+import phone, vision, google_apps, media, learning, proactive, autopilot, hands_native, evolve, metrics, team, missions, projects, anticipate, routines, health, awareness, docs
+SPECS += hands_native.SPECS + phone.SPECS + vision.SPECS + autopilot.SPECS + google_apps.SPECS + media.SPECS + learning.SPECS + proactive.SPECS + evolve.SPECS + metrics.SPECS + team.SPECS + missions.SPECS + projects.SPECS + anticipate.SPECS + routines.SPECS + health.SPECS + awareness.SPECS + docs.SPECS
+for m in (hands_native, phone, vision, autopilot, google_apps, media, learning, proactive, evolve, metrics, team, missions, projects, anticipate, routines, health, awareness, docs):
     FUNCS.update(m.FUNCS)
 DANGEROUS |= {"phone_sms"} | google_apps.DANGEROUS | learning.DANGEROUS | autopilot.DANGEROUS | evolve.DANGEROUS
 learning.load_skills()   # compétences écrites par Jarvis
