@@ -126,6 +126,19 @@ def _loosen(tools_spec):
     return out
 
 
+def _slim(tools_spec):
+    """Outils allégés (descriptions courtes, sans descriptions de paramètres) pour les modèles à petit quota."""
+    out = json.loads(json.dumps(tools_spec))
+    for t in out:
+        f = t.get("function", t)
+        d = f.get("description", "")
+        f["description"] = (d.split(". ")[0])[:110]
+        sch = f.get("parameters") or {}
+        for v in (sch.get("properties") or {}).values():
+            v.pop("description", None)
+    return out
+
+
 def _post(p, model, messages, tools_spec, max_tokens, _retry=False):
     import httpx
     try:
@@ -140,6 +153,13 @@ def _post(p, model, messages, tools_spec, max_tokens, _retry=False):
         note = {"role": "system", "content": "Pour chaque outil, respecte exactement son schéma ; omets les paramètres facultatifs au lieu de mettre null."}
         i = 1 if messages and messages[0].get("role") == "system" else 0
         return _post(p, model, messages[:i] + [note] + messages[i:], _loosen(tools_spec), max_tokens, _retry=True)
+    if r.status_code == 413 and tools_spec and _retry != "slim":
+        # requête trop grosse pour le quota du modèle : outils allégés + historique raccourci
+        sys_m = [m for m in messages[:1] if m.get("role") == "system"]
+        rest = messages[len(sys_m):][-6:]
+        while rest and rest[0].get("role") == "tool":
+            rest = rest[1:]
+        return _post(p, model, sys_m + rest, _slim(tools_spec), max_tokens, _retry="slim")
     if r.status_code != 200:
         raise ProviderError(p["id"], r.status_code, r.text, r.headers.get("retry-after"))
     data = r.json()
@@ -169,6 +189,8 @@ def call(p, messages, tools_spec, max_tokens=1200):
             last = e
             if e.status == 429:
                 MODEL_COOL[(p["id"], m)] = now + min(float(e.retry_after or 0) or 600, 6 * 3600)
+            elif e.status == 413:
+                MODEL_COOL[(p["id"], m)] = now + 600   # trop gros pour ce modèle : le suivant
             elif e.status == 404 or (e.status in (400, 422) and m != p["model"]):
                 seen404 = seen404 or e.status == 404
                 MODEL_COOL[(p["id"], m)] = now + 24 * 3600   # modèle inexistant/retiré ou incompatible → suivant

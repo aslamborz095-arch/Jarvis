@@ -14,7 +14,8 @@ SKIP = {"appdata", "node_modules", ".git", ".venv", "venv", "__pycache__", "$rec
         "program files", "program files (x86)", "programdata", ".cache", "site-packages"}
 TEXT_EXT = {".txt", ".md", ".csv", ".json", ".py", ".log", ".html", ".xml", ".ini", ".srt"}
 DOC_EXT = {".pdf", ".docx", ".xlsx", ".xlsm", ".pptx"}
-MAX_TEXT, MAX_SIZE, PERIOD = 30000, 15_000_000, 6 * 3600
+MAX_TEXT, MAX_SIZE, PERIOD = 150_000, 15_000_000, 6 * 3600
+VERSION = 2   # changer → les fichiers à contenu sont relus
 STATE = {"running": False, "last": None, "files": 0, "indexed": 0, "fts": None, "error": ""}
 _lock = threading.Lock()
 
@@ -43,7 +44,7 @@ def _text(p):
     try:
         if ext in DOC_EXT:
             import tools
-            return (tools._doc_text(p, pages=30) or "")[:MAX_TEXT]
+            return (tools._doc_text(p, pages=80) or "")[:MAX_TEXT]
         if ext in TEXT_EXT:
             with open(p, encoding="utf-8", errors="replace") as f:
                 return f.read(MAX_TEXT)
@@ -68,6 +69,14 @@ def build(root=None, throttle=0.01):
     try:
         root = pathlib.Path(root or pathlib.Path.home())
         c = _db()
+        c.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
+        if (c.execute("SELECT v FROM meta WHERE k='version'").fetchone() or ["1"])[0] != str(VERSION):
+            exts = tuple(TEXT_EXT | DOC_EXT)   # nouvelle règle d'extraction : seuls les fichiers à contenu sont relus
+            for (fp,) in c.execute("SELECT path FROM files").fetchall():
+                if fp.lower().endswith(exts):
+                    c.execute("UPDATE files SET mtime=-1 WHERE path=?", (fp,))
+            c.execute("INSERT OR REPLACE INTO meta VALUES('version', ?)", (str(VERSION),))
+            c.commit()
         known = dict(c.execute("SELECT path, mtime FROM files"))
         seen, new = set(), 0
         for dp, dirs, fs in os.walk(root):
