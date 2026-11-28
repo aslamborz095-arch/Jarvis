@@ -140,8 +140,9 @@ def call(p, messages, tools_spec, max_tokens=1200):
             last = e
             if e.status == 429:
                 MODEL_COOL[(p["id"], m)] = now + min(float(e.retry_after or 0) or 600, 6 * 3600)
-            elif e.status in (400, 404, 422) and m != p["model"]:
-                MODEL_COOL[(p["id"], m)] = now + 24 * 3600   # modèle de secours inexistant ou incompatible
+            elif e.status == 404 or (e.status in (400, 422) and m != p["model"]):
+                MODEL_COOL[(p["id"], m)] = now + 24 * 3600   # modèle inexistant/retiré ou incompatible → suivant
+                print(f"[providers] {p['id']} modèle {m} écarté 24 h ({e.status}) : {str(e)[:200]}", flush=True)
             else:
                 raise
     raise last or ProviderError(p["id"], 429, "tous les modèles de ce fournisseur sont en pause")

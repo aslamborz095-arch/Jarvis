@@ -367,6 +367,7 @@ def ask(message):
             err = str(e)
             _measure(backend, False, t0, err)
             log.append(f"{backend.replace('oa:', '')} indisponible ({e.status}) → IA suivante")
+            print(f"[providers] {backend} {e.status} : {err[:240]}", flush=True)
         except Exception as e:
             err = str(e)
             _measure(backend, False, t0, err)
